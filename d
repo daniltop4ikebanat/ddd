@@ -138,7 +138,7 @@ local function connectLive(signal, fn)
 	table.insert(liveConnections, conn);
 	return conn;
 end
-local PASTE_RAW_URL = "https://raw.githubusercontent.com/daniltop4ikebanat/dd/refs/heads/main/white";
+local PASTE_RAW_URL = "https://raw.githubusercontent.com/daniltop4ikebanat/ddd/refs/heads/main/white";
 local function detect_http_getter()
 	local env = (getgenv and getgenv()) or _G;
 	if ((type(env.syn) == "table") and (type(env.syn.request) == "function")) then
