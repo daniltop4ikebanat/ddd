@@ -192,7 +192,7 @@ local LOCAL_WHITELIST = {
 	"chjhoooofc",
 	"vsdgsegsgsegsegsd",
 	"IlIlIllIIlllllIllIlI",
-        "sgferesgrf43t",
+        "Hronk5497",
 	"QviyCUTgQI",
 };
 local allowedUsers = {};
