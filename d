@@ -190,7 +190,7 @@ local LOCAL_WHITELIST = {
 	"cyphikshop3",
 	"612072",
 	"chjhoooofc",
-	"vsdgsegsgsegsegsd",
+	"09w3aa",
 	"IlIlIllIIlllllIllIlI",
         "Hronk5497",
 	"09w3a",
