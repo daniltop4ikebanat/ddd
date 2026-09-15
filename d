@@ -309,7 +309,6 @@ local LOCAL_WHITELIST = {
 	"612072",
 	"thebindingofisaac547",
     "Hronk5497",
-	"Slowtz7519",
 };
 local allowedUsers = {};
 do
