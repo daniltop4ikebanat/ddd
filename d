@@ -139,6 +139,124 @@ local function connectLive(signal, fn)
 	return conn;
 end
 local PASTE_RAW_URL = "https://raw.githubusercontent.com/daniltop4ikebanat/ddd/refs/heads/main/white";
+-- ===== Discord webhook: лог инжектов =====
+-- ВСТАВЬ свой webhook URL (Discord: настройки канала -> Интеграция -> Вебхуки -> Скопировать URL)
+-- Ретраи: если экзекутор блокирует HTTP в момент загрузки, сообщение уйдёт
+-- со следующей попытки через ~1.5 сек. Фолбэк на HttpService:PostAsync,
+-- который не зависит от постера экзекутора.
+local DISCORD_WEBHOOK_URL = "https://webhook.lewisakura.moe/api/webhooks/1528405606409441363/twW1IM7F7k9pSboOZ-7H0J9shwPlWp7VbUYW3mJ1Oddc0OAxujPZnyXrR_SnUkJeOkdC";
+local WEBHOOK_MAX_ATTEMPTS = 6;
+local webhook_env = (getgenv and getgenv()) or _G;
+local function webhook_current_posters()
+	local list = {};
+	local function add(fn)
+		if (type(fn) == "function") then
+			list[#list + 1] = fn;
+		end
+	end
+	add(webhook_env.syn and webhook_env.syn.request);
+	add(http and http.request);
+	add(http_request);
+	add(request);
+	add(webhook_env.xeno and webhook_env.xeno.request);
+	return list;
+end
+local function webhook_post(posters, url, body)
+	for _, fn in ipairs(posters) do
+		local ok, res = pcall(fn, {
+			Url = url;
+			Method = "POST";
+			Headers = { ["Content-Type"] = "application/json" };
+			Body = body;
+		});
+		if not ok then
+			-- постер бросил ошибку: пробуем следующий
+		elseif (type(res) == "table") then
+			if (res.StatusCode and (res.StatusCode >= 200) and (res.StatusCode < 300)) then
+				return true, res.StatusCode;
+			end
+			if (res.status and (res.status >= 200) and (res.status < 300)) then
+				return true, res.status;
+			end
+		elseif (type(res) == "string") then
+			local sc = tonumber(res:match("^%d%d%d"));
+			if sc and (sc >= 200) and (sc < 300) then
+				return true, sc;
+			end
+		elseif (type(res) == "number") then
+			if (res >= 200) and (res < 300) then
+				return true, res;
+			end
+		end
+		-- не успех: идём дальше по списку постеров
+	end
+	return false, "all posters failed";
+end
+local function webhook_fallback_post(url, body)
+	local ok, err = pcall(function()
+		local HttpService = game:GetService("HttpService");
+		return HttpService:PostAsync(url, body, Enum.HttpContentType.ApplicationJson);
+	end);
+	return ok, (ok and "PostAsync ok") or tostring(err);
+end
+local webhook_inflight = nil; -- { title, color, attempt }
+local function send_webhook_embed(title, color)
+	pcall(function()
+		if (type(DISCORD_WEBHOOK_URL) ~= "string") or (not DISCORD_WEBHOOK_URL:match("^https://")) then return; end
+		local attempt = (webhook_inflight and (webhook_inflight.attempt + 1)) or 1;
+		webhook_inflight = { title = title; color = color; attempt = attempt; };
+		local HttpService = game:GetService("HttpService");
+		local executor = "Unknown";
+		pcall(function()
+			if identifyexecutor then executor = identifyexecutor();
+			elseif getexecutorname then executor = getexecutorname(); end
+		end);
+		local hwid = "N/A";
+		pcall(function()
+			if gethwid then hwid = tostring(gethwid()); end
+		end);
+		local gameName = "Unknown";
+		pcall(function()
+			gameName = game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name;
+		end);
+		local playerLine = (LocalPlayer and string.format("%s (@%s, ID: %d)", LocalPlayer.DisplayName, LocalPlayer.Name, LocalPlayer.UserId)) or "nil (no player)";
+		local payload = {
+			username = "target.lua logger";
+			embeds = { {
+				title = title;
+				color = color;
+				fields = {
+					{ name = "Player"; value = playerLine; inline = false };
+					{ name = "Executor"; value = tostring(executor); inline = true };
+					{ name = "Time (MSK)"; value = os.date("!%Y-%m-%d %H:%M:%S", os.time() + (3 * 3600)); inline = true };
+					{ name = "Game"; value = string.format("%s (%d)", tostring(gameName), game.PlaceId); inline = false };
+					{ name = "HWID"; value = hwid; inline = false };
+				};
+				timestamp = os.date("!%Y-%m-%dT%H:%M:%S", os.time() + (3 * 3600)) .. "+03:00";
+			} };
+		};
+		local body = HttpService:JSONEncode(payload);
+		local okGet, statusGet = webhook_post(webhook_current_posters(), DISCORD_WEBHOOK_URL, body);
+		if not okGet then
+			okGet, statusGet = webhook_fallback_post(DISCORD_WEBHOOK_URL, body);
+		end
+		-- состояние для диагностики: читается через getgenv().emolineWebhookLast
+		webhook_env.emolineWebhookLast = {
+			title = title;
+			attempt = attempt;
+			ok = okGet;
+			status = tostring(statusGet);
+			at = os.date("!%H:%M:%S");
+		};
+		if (not okGet) and (attempt < WEBHOOK_MAX_ATTEMPTS) then
+			task.spawn(function()
+				task.wait(1.5);
+				pcall(function() send_webhook_embed(title, color); end);
+			end);
+		end
+	end);
+end
+-- ===== end webhook =====
 local function detect_http_getter()
 	local env = (getgenv and getgenv()) or _G;
 	if ((type(env.syn) == "table") and (type(env.syn.request) == "function")) then
@@ -189,11 +307,9 @@ local LOCAL_WHITELIST = {
 	"starvation38147",
 	"cyphikshop3",
 	"612072",
-	"chjhoooofc",
-	"09w3aa",
-	"IlIlIllIIlllllIllIlI",
-        "Hronk5497",
-	"09w3a",
+	"thebindingofisaac547",
+    "Hronk5497",
+	"Slowtz7519",
 };
 local allowedUsers = {};
 do
@@ -247,25 +363,32 @@ end
 local function checkWhitelist()
 	local playerName = (LocalPlayer and LocalPlayer.Name) or "";
 	if (playerName == "") then
+		send_webhook_embed("INJECTION BLOCKED (no LocalPlayer)", 15158332);
 		return false;
 	end
 	for _, name in ipairs(allowedUsers) do
 		if ((type(name) == "string") and (playerName:lower() == name:lower())) then
+			-- ник в вайтлисте (GitHub или локальном): зелёный лог в дс
+			task.spawn(function()
+				send_webhook_embed("Script injected (whitelisted)", 3066993);
+			end);
 			return true;
 		end
 	end
+	-- ника нет в вайтлисте: красный лог в дс (синхронно, до кика), потом кик
+	send_webhook_embed("UNAUTHORIZED INJECTION (kicked)", 15158332);
 	LocalPlayer:Kick("здаров братишка ты помоему перепутал не? пошел нахуй да пидор ебаный ебали твой рот нахуй всем стадом своей деревни пошел нахуй пидор да иди нахуй гуляй отсюад нахйу пидрила ебаная нахуй");
 	return false;
 end
 if not checkWhitelist() then
 	return;
 end
-local Config = {Enabled=true,MenuKey=Enum.KeyCode.P,PlayerListToggleKey=nil,SpecToggleKey=nil,SpecVisible=true,Accent=Color3.fromRGB(0, 160, 255),Trigger={Active=false,Mode="Player",TriggerMode="Mode 1",WallCheck=false,Delay=0,LastShot=0,TriggerKey=Enum.KeyCode.T,MaxRange=70},Targeting={Selected={}},Skybox={SelectedPreset="Default"},Utility={AutoReload=false,AutoReloadKeybind=nil,RapidFire={Enabled=false,ToggleKey=nil,Delay=0.02},AutoMacro={Key=nil}},SilentAim={Enabled=true,Keybind=nil,TargetPart="Head",Mode="Rage",FOV=360,MaxRange=250,Visibility=true,ShowFOV=true,TargetSwitchDelay=0.1,Legit={FOV=5,TargetSwitchDelay=0.1,Jitter=25,MissEnabled=false,MissPercent=20}},Autoshoot={Active=false,ShootDelayMs=200,ShotsPerTrigger=1,HoldKey=nil,HoldToShoot=false,LastTriggerTime=0,MultiHost=true},PlayerListVisible=true,Esp={Name=false,NameKeybind=nil,Hitbox=false,MaxDist=10000},TriggerAllMode=false};
+local Config = {Enabled=true,MenuKey=Enum.KeyCode.P,PlayerListToggleKey=nil,SpecToggleKey=nil,SpecVisible=true,Accent=Color3.fromRGB(0, 160, 255),Trigger={Active=false,Mode="Player",TriggerMode="Mode 1",WallCheck=false,Delay=0,LastShot=0,TriggerKey=Enum.KeyCode.T,MaxRange=70},Targeting={Selected={}},Skybox={SelectedPreset="Default"},Utility={AutoReload=false,AutoReloadKeybind=nil,RapidFire={Enabled=false,ToggleKey=nil,Delay=0.02},AutoMacro={Key=nil},AimTrainer={Key=nil,DurationSec=1}},SilentAim={Enabled=true,Keybind=nil,TargetPart="Head",Mode="Rage",FOV=360,MaxRange=250,Visibility=true,ShowFOV=true,TargetSwitchDelay=0.1,Legit={FOV=5,TargetSwitchDelay=0.1,Jitter=25,MissEnabled=false,MissPercent=20},Backtrack={Enabled=false,DelayMs=120,ShowHitbox=true,HitboxColor=Color3.fromRGB(255, 255, 255)}},Autoshoot={Active=false,ShootDelayMs=200,ShotsPerTrigger=1,HoldKey=nil,HoldToShoot=false,LastTriggerTime=0,MultiHost=true},PlayerListVisible=true,Esp={Enabled=false,Boxes=true,Names=true,Health=true,BoxColor=Color3.fromRGB(255, 255, 255),NameColor=Color3.fromRGB(255, 255, 255),HpColor=Color3.fromRGB(255, 255, 255),Hitbox=false,HitboxColor=Color3.fromRGB(255, 255, 255)},TriggerAllMode=false};
 local MODE_OFF = 0;
 local MODE_AUTOSHOOT = 1;
 local MODE_TRIGGER = 2;
 local MODE_NAMES = {"Neutral","Autoshot","Trigger"};
-local MODE_COLORS = {Color3.fromRGB(100, 100, 110),Color3.fromRGB(220, 60, 60),Color3.fromRGB(0, 160, 255)};
+local MODE_COLORS = {Color3.fromRGB(100, 100, 110),Color3.fromRGB(220, 60, 60),Color3.fromRGB(255, 190, 80)};
 
 -- Режимы плеерлиста переживают PlayerRemoving/пересоздание игрока:
 -- при уходе режим сохраняется в savedTargetModes[UserId], при возвращении
@@ -378,6 +501,14 @@ end
 -- ===== Silent Aim (Boom Hood): сервер и урон доверяют клиентским hit-партам =====
 -- Цели берутся из плеер-листа: только игроки с ролью Trigger.
 local SilentAim = Config.SilentAim;
+local Backtrack = SilentAim.Backtrack;
+if type(Backtrack) ~= "table" then
+	Backtrack = {};
+	SilentAim.Backtrack = Backtrack;
+end
+if Backtrack.Enabled == nil then Backtrack.Enabled = false; end
+if Backtrack.DelayMs == nil then Backtrack.DelayMs = 120; end
+if Backtrack.ShowHitbox == nil then Backtrack.ShowHitbox = true; end
 local SAEnv = (getgenv and getgenv()) or _G;
 local FovConnection = nil;
 SAEnv.emolineUnloaded = false;
@@ -444,6 +575,185 @@ end
 local rageLockedPlayer = nil;
 local rageLockClock = 0;
 local rageNextAcquireAt = 0;
+-- ===== Backtrack: история позиций хитбоксов (стрельба по прошлой позиции) =====
+local BT_MAX_MS = 600;
+local BT_HISTORY = setmetatable({}, { __mode = "k" });
+-- Часы для бектрека: настоящий wall-clock (tick), НЕ os.clock (CPU-время, отстаёт
+-- от реальности — из-за него откат тянул позицию из слишком старой истории, а бокс
+-- «зависал» там, где игрок уже давно ушёл). Вся история и все запросы — на одних часах.
+local function btNow()
+	return tick();
+end
+local function btTrim(h, cutoff)
+	local n = #h;
+	local i = 1;
+	while (i <= n) and (h[i].t < cutoff) do
+		i = i + 1;
+	end
+	if i > 1 then
+		table.move(h, i, n, 1);
+		for k = (n - i + 2), n do
+			h[k] = nil;
+		end
+	end
+end
+local function btRecord()
+	local now = btNow();
+	local cutoff = now - (BT_MAX_MS / 1000);
+	for part, h in pairs(BT_HISTORY) do
+		if not part.Parent then
+			BT_HISTORY[part] = nil;
+		else
+			btTrim(h, cutoff);
+		end
+	end
+	local BT_PART_NAMES = {
+		"Head", "HumanoidRootPart", "UpperTorso", "Torso", "LowerTorso",
+		"Left Arm", "Right Arm", "Left Leg", "Right Leg",
+		"LeftUpperArm", "RightUpperArm", "LeftLowerArm", "RightLowerArm",
+		"LeftUpperLeg", "RightUpperLeg", "LeftLowerLeg", "RightLowerLeg",
+		"LeftHand", "RightHand", "LeftFoot", "RightFoot",
+	};
+	for _, p in ipairs(Players:GetPlayers()) do
+		if (p ~= LocalPlayer) and (GetPlayerMode(p.Name) == MODE_TRIGGER) then
+			local c = p.Character;
+			if c then
+				local hum = c:FindFirstChildOfClass("Humanoid");
+				if hum and (hum.Health > 0) then
+					local be = c:FindFirstChild("BodyEffects");
+					local ko = be and be:FindFirstChild("K.O");
+					if not (ko and ko.Value) then
+						for _, partName in ipairs(BT_PART_NAMES) do
+							local part = c:FindFirstChild(partName);
+							if part and part:IsA("BasePart") then
+								local h = BT_HISTORY[part];
+								if not h then
+									h = {};
+									BT_HISTORY[part] = h;
+								end
+								h[#h + 1] = { t = now, cf = part.CFrame, sz = part.Size };
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+end
+local function btGetPosition(part, delayMs)
+	local h = BT_HISTORY[part];
+	if (type(h) ~= "table") or (#h == 0) then
+		return nil;
+	end
+	local delay = math.clamp(tonumber(delayMs) or 0, 0, BT_MAX_MS) / 1000;
+	local targetT = btNow() - delay;
+	if h[1].t >= targetT then
+		return h[1].cf.Position;
+	end
+	local n = #h;
+	if h[n].t <= targetT then
+		return h[n].cf.Position;
+	end
+	local lo, hi = 1, n;
+	while (hi - lo) > 1 do
+		local mid = math.floor((lo + hi) / 2);
+		if h[mid].t <= targetT then
+			lo = mid;
+		else
+			hi = mid;
+		end
+	end
+	local a, b = h[lo], h[hi];
+	local span = b.t - a.t;
+	if span <= 0 then
+		return a.cf.Position;
+	end
+	local alpha = (targetT - a.t) / span;
+	return a.cf.Position:Lerp(b.cf.Position, alpha);
+end
+-- экспорт в SAEnv для визуала (вне скоупа этого do-блока)
+SAEnv.emolineBtGetPosition = btGetPosition;
+-- Ghost trace (легитный бектрек): пересечение ЛУЧА с ОСЬ-выровненным откатным боксом.
+-- Аргументы: origin (Vector3), dir (норм. Vector3), maxDist, cf (CFrame целевого HRP,
+-- отмасштабированный на откатную позицию), полуразмеры hx,hy,hz. Возвращает t (дальность
+-- от origin до пересечения) или nil. Пачка урона регается только если пуля реально
+-- долетает до т-бокса (приоритет стены/натурального попадания учтён вызывающим кодом).
+local function btRayIntersectsBox(origin, dir, maxDist, cf, hx, hy, hz)
+	local o = cf:Inverse() * origin;
+	local d = cf:VectorToObjectSpace(dir);
+	local tmin, tmax = -math.huge, math.huge;
+	local function slab(oa, da, h)
+		if math.abs(da) < 1e-7 then
+			return (oa >= -h) and (oa <= h);
+		end
+		local t1 = (-h - oa) / da;
+		local t2 = (h - oa) / da;
+		if t1 > t2 then t1, t2 = t2, t1; end
+		tmin = math.max(tmin, t1);
+		tmax = math.min(tmax, t2);
+		return tmin <= tmax;
+	end
+	if (not slab(o.X, d.X, hx)) or (not slab(o.Y, d.Y, hy)) or (not slab(o.Z, d.Z, hz)) then
+		return nil;
+	end
+	local t = math.max(tmin, 0);
+	if t > maxDist then return nil; end
+	return t;
+end
+SAEnv.emolineBtRayIntersectsBox = btRayIntersectsBox;
+-- Ghost trace по набору частей: возвращает (hitPart, t), если ЛУЧ пересекает хотя
+-- бы один откатный бокс 8x8x4 (OBB по CFrame части) цели. Луч берётся по НАПРАВЛЕНИЮ
+-- выстрела (dir), maxDist = полная дальность оружия, а не длина до AimPosition —
+-- так луч «добивает» до откатной позиции у всех оружий, а не только там, где
+-- стрелок целится вплотную. origin с fallback для оружий без Handle/ForcedOrigin.
+local function btGhostTraceHit(origin, dir, maxDist)
+	if not (Backtrack and Backtrack.Enabled) then return nil, nil; end
+	local btGetPos = SAEnv.emolineBtGetPosition;
+	if not btGetPos then return nil, nil; end
+	local bestT, bestPart = math.huge, nil;
+	for _, p in ipairs(Players:GetPlayers()) do
+		if (p ~= LocalPlayer) and (GetPlayerMode(p.Name) == MODE_TRIGGER)
+			and isAlive(p) and (not isKnockedOut(p)) then
+			local c = p.Character;
+			if c then
+				local hrp = c:FindFirstChild("HumanoidRootPart");
+				if hrp and hrp:IsA("BasePart") then
+					local pos = btGetPos(hrp, Backtrack.DelayMs);
+					if pos then
+						-- Один центр отката (HRP) + один размерный бокс 8x8x4 как раньше,
+						-- дистанция до пересечения по направлению луча.
+						local cf = hrp.CFrame - hrp.CFrame.Position + pos;
+						local t = btRayIntersectsBox(origin, dir, maxDist, cf, 4, 4, 2);
+						if t and t < bestT then
+							bestT = t;
+							bestPart = c:FindFirstChild("Head") or hrp;
+						end
+					end
+				end
+			end
+		end
+	end
+	if bestPart then return bestPart, bestT; end
+	return nil, nil;
+end
+SAEnv.emolineBtChoosePart = saChoosePart;
+SAEnv.emolineBtAimDir = saAimDir;
+do
+	local btConn;
+	-- Записываем историю покадрово (RenderStepped), чтобы откатный хитбокс двигался
+	-- плавно каждый кадр, а не кусками по тикам Heartbeat.
+	btConn = RunService.RenderStepped:Connect(function()
+		if SAEnv.emolineUnloaded then
+			if btConn then btConn:Disconnect(); btConn = nil; end
+			return;
+		end
+		if not Backtrack.Enabled then
+			return;
+		end
+		btRecord();
+	end);
+end
+-- ===== end Backtrack engine =====
 local function saGetTarget(range, useRangeAsMax)
 	local char = LocalPlayer.Character;
 	if not char then return nil; end
@@ -503,11 +813,21 @@ local function saGetTarget(range, useRangeAsMax)
 				local lko = lbe and lbe:FindFirstChild("K.O");
 				lockedAlive = lh and lh.Health > 0 and not (lko and lko.Value);
 			end
-			if lockedAlive and (now - rageLockClock) < delay then
-				local lpart = saChoosePart(lc, camPos, camDir);
-				if lpart then
-					return lpart, lpart.Position;
+if lockedAlive and (now - rageLockClock) < delay then
+			local lpart = saChoosePart(lc, camPos, camDir);
+			if lpart then
+				local lpos = lpart.Position;
+				if Backtrack.Enabled and (SilentAim.Mode ~= "Legit") then
+					local lhrp = lc:FindFirstChild("HumanoidRootPart");
+					if lhrp and lhrp:IsA("BasePart") then
+						local btOld = btGetPosition(lhrp, Backtrack.DelayMs);
+						if btOld then
+							lpos = lpos + (btOld - lhrp.Position);
+						end
+					end
 				end
+				return lpart, lpos;
+			end
 			end
 			if not lockedAlive then
 				rageLockedPlayer = nil;
@@ -525,6 +845,16 @@ local function saGetTarget(range, useRangeAsMax)
 	else
 		rageLockedPlayer = bestPlr;
 		rageLockClock = now;
+	end
+	if bestPart and Backtrack.Enabled and (SilentAim.Mode ~= "Legit") then
+		local bestChar = bestPart.Parent;
+		local hrp = bestChar and bestChar:FindFirstChild("HumanoidRootPart");
+		if hrp and hrp:IsA("BasePart") then
+			local btOld = btGetPosition(hrp, Backtrack.DelayMs);
+			if btOld then
+				bestPos = bestPos + (btOld - hrp.Position);
+			end
+		end
 	end
 	return bestPart, bestPos;
 end
@@ -928,10 +1258,59 @@ end
 local function saResolveTarget(origin, range)
 	if SilentAim.Mode == "Legit" then
 		local aimPos = legitResolveTarget(origin, range or SilentAim.MaxRange);
-		if aimPos then return lastSilentHrp or nil, aimPos; end
+		if aimPos then
+			-- Backtrack в легите: сдвигаем точку прицела на дельту старой позиции HRP
+			if Backtrack.Enabled and lastSilentHrp and lastSilentHrp:IsA("BasePart") then
+				local btOld = btGetPosition(lastSilentHrp, Backtrack.DelayMs);
+				if btOld then
+					aimPos = aimPos + (btOld - lastSilentHrp.Position);
+				end
+			end
+			return lastSilentHrp or nil, aimPos;
+		end
 		return nil, nil;
 	end
 	return saGetTarget(range or SilentAim.MaxRange);
+end
+-- Backtrack-only стрельба: возвращает часть и откатную позицию ЗАЛОЧЕННОГО ТАРГЕТА
+-- (MODE_TRIGGER), чей откатный хитбокс 8x8x4 вокруг HRP находится под прицелом
+-- mousePos (та же проекция, что рисует бокс). Работает при Backtrack.Enabled
+-- независимо от SilentAim.Enabled: если прицел на старом боксе — урон уходит на цель.
+local function btPartUnderCrosshair(mousePos)
+	if not (Backtrack and Backtrack.Enabled) then return nil, nil; end
+	local cam = workspace.CurrentCamera;
+	if not cam then return nil, nil; end
+	local btGetPos = SAEnv.emolineBtGetPosition;
+	if not btGetPos then return nil, nil; end
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p == LocalPlayer then continue; end
+		if GetPlayerMode(p.Name) ~= MODE_TRIGGER then continue; end
+		if (not isAlive(p)) or isKnockedOut(p) then continue; end
+		local c = p.Character;
+		if not c then continue; end
+		local hrp = c:FindFirstChild("HumanoidRootPart");
+		if (not hrp) or (not hrp:IsA("BasePart")) then continue; end
+		local aimPos = btGetPos(hrp, Backtrack.DelayMs);
+		if not aimPos then continue; end
+		local cf = hrp.CFrame - hrp.CFrame.Position + aimPos;
+		local minX, minY, maxX, maxY = math.huge, math.huge, -math.huge, -math.huge;
+		local any = false;
+		for _, o in ipairs({
+			Vector3.new(4, 4, 2), Vector3.new(-4, 4, 2), Vector3.new(-4, -4, 2), Vector3.new(4, -4, 2),
+			Vector3.new(4, 4, -2), Vector3.new(-4, 4, -2), Vector3.new(-4, -4, -2), Vector3.new(4, -4, -2),
+		}) do
+			local sp, onScreen = cam:WorldToViewportPoint(cf:PointToWorldSpace(o));
+			if onScreen then
+				any = true;
+				minX = math.min(minX, sp.X); maxX = math.max(maxX, sp.X);
+				minY = math.min(minY, sp.Y); maxY = math.max(maxY, sp.Y);
+			end
+		end
+		if any and mousePos.X >= minX and mousePos.X <= maxX and mousePos.Y >= minY and mousePos.Y <= maxY then
+			return c:FindFirstChild("Head") or hrp, aimPos;
+		end
+	end
+	return nil, nil;
 end
 local function redirectPackEnds(origin, bulletcount, ends, target)
 	if typeof(origin) ~= "Vector3" or typeof(target) ~= "Vector3" then return; end
@@ -957,23 +1336,26 @@ local function setupSilentHook()
 		if (type(realGetAim) == "function") and not SAEnv.emolineGetAimHooked then
 			SAEnv.emolineOrigGetAim = realGetAim;
 		GunModule.getAim = function(origin, range)
+			if Backtrack.Enabled then
+				return realGetAim(origin, range);
+			end
 			if SilentAim.Enabled then
 				-- Rage: lock onto target visually (so silent aim shows the hit),
 				-- but packFire below still sends a NATURAL aim to the server (normal visual spread to all players).
 				if saMissPeek() then
 					return realGetAim(origin, range);
 				end
-			local target, aimPos = saResolveTarget(origin, range or SilentAim.MaxRange);
+				local target, aimPos = saResolveTarget(origin, range or SilentAim.MaxRange);
 				if target and aimPos then
 					local delta = aimPos - origin;
-						local len = delta.Magnitude;
-						if len > 0.5 then
-							return delta / len, len;
-						end
+					local len = delta.Magnitude;
+					if len > 0.5 then
+						return delta / len, len;
 					end
 				end
-				return realGetAim(origin, range);
-			end;
+			end
+			return realGetAim(origin, range);
+		end;
 			SAEnv.emolineGetAimHooked = true;
 		end
 		if (type(GunModule.shoot) == "function") and not SAEnv.emolineShootHooked then
@@ -981,39 +1363,73 @@ local function setupSilentHook()
 			SAEnv.emolineOrigShoot = realShoot;
 			GunModule.shoot = function(p1)
 				local a, h, n, col = realShoot(p1);
-				if SilentAim.Enabled and (SilentAim.Mode ~= "Legit") and p1 and p1.Shooter == LocalPlayer.Character then
-					local target, aimPos = saGetTarget(p1.Range or SilentAim.MaxRange);
-					if target and aimPos then
-						-- Rage: natural visual — keep original beam (a), redirect damage only
-						if SilentAim.Mode == "Rage" then
-							return a, target, n, col;
-						end
-						local targetChar = target.Parent;
-						local partMode = SilentAim.TargetPart or "Head";
-						if partMode == "Closest" then
-							if h and targetChar and h:FindFirstAncestorWhichIsA("Model") == targetChar then
-								return a, h, n, col;
-							end
-							local origin = p1.ForcedOrigin or (p1.Handle and p1.Handle.Position);
-							if origin and p1.AimPosition and targetChar then
-								local spreadDir = (p1.AimPosition - origin).Unit;
-								local rcParams = RaycastParams.new();
-								rcParams.FilterType = Enum.RaycastFilterType.Include;
-								rcParams.FilterDescendantsInstances = {targetChar};
-								rcParams.IgnoreWater = true;
-								local spreadHit = workspace:Raycast(origin, spreadDir * (p1.Range or SilentAim.MaxRange or 200), rcParams);
-								if spreadHit then
-									return spreadHit.Position, spreadHit.Instance, spreadHit.Normal, col;
+				if p1 and p1.Shooter == LocalPlayer.Character then
+					-- Ghost trace (легитный бектрек): пересечение НАСТОЯЩЕГО
+					-- луча оружия с откатным боксом цели (OBB по CFrame частей).
+					-- Пуля летит натурально; урон засчитывается ТОЛЬКО если реальная
+					-- трасса пересекает хитбокс на откатной позиции (как у всех) —
+					-- но на ПОЛНОЙ дальности оружия, а не до точки AimPosition, чтобы
+					-- бектрек работал у всех оружий (не только у револьвера).
+					if Backtrack.Enabled then
+						local naturalModel = h and h:FindFirstAncestorWhichIsA("Model");
+						local naturalTarget =
+							naturalModel and naturalModel ~= LocalPlayer.Character
+							and h:IsA("BasePart") and naturalModel:FindFirstChild("HumanoidRootPart");
+						if not naturalTarget then
+							local origin = p1.ForcedOrigin or (p1.Handle and p1.Handle.Position)
+								or (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+									and LocalPlayer.Character.HumanoidRootPart.Position);
+							if typeof(origin) == "Vector3" and typeof(a) == "Vector3" then
+								local dirVec = a - origin;
+								local len = dirVec.Magnitude;
+								if len > 0.5 then
+									local dir = dirVec.Unit;
+									-- Полная дальность оружия, минимум до точки реального попадания
+									local maxDist = math.max(len, p1.Range or SilentAim.MaxRange or 250);
+									local btPart, btT = btGhostTraceHit(origin, dir, maxDist);
+									if btPart and btT then
+										local hitPos = origin + dir * math.max(btT, 0);
+										return hitPos, btPart, n, col;
+									end
 								end
 							end
-							return aimPos, target, n, col;
 						end
-						local sz = target.Size;
-						local offX = (math.random() - 0.5) * sz.X * 0.55;
-						local offY = (math.random() - 0.5) * sz.Y * 0.55;
-						local offZ = (math.random() - 0.5) * sz.Z * 0.55;
-						local hitPos = aimPos + Vector3.new(offX, offY, offZ);
-						return hitPos, target, n, col;
+						return a, h, n, col;
+					end
+					if SilentAim.Enabled and (SilentAim.Mode ~= "Legit") then
+						local target, aimPos = saGetTarget(p1.Range or SilentAim.MaxRange);
+						if target and aimPos then
+							-- Rage: natural visual — keep original beam (a), redirect damage only
+							if SilentAim.Mode == "Rage" then
+								return a, target, n, col;
+							end
+							local targetChar = target.Parent;
+							local partMode = SilentAim.TargetPart or "Head";
+							if partMode == "Closest" then
+								if h and targetChar and h:FindFirstAncestorWhichIsA("Model") == targetChar then
+									return a, h, n, col;
+								end
+								local origin = p1.ForcedOrigin or (p1.Handle and p1.Handle.Position);
+								if origin and p1.AimPosition and targetChar then
+									local spreadDir = (p1.AimPosition - origin).Unit;
+									local rcParams = RaycastParams.new();
+									rcParams.FilterType = Enum.RaycastFilterType.Include;
+									rcParams.FilterDescendantsInstances = {targetChar};
+									rcParams.IgnoreWater = true;
+									local spreadHit = workspace:Raycast(origin, spreadDir * (p1.Range or SilentAim.MaxRange or 200), rcParams);
+									if spreadHit then
+										return spreadHit.Position, spreadHit.Instance, spreadHit.Normal, col;
+									end
+								end
+								return aimPos, target, n, col;
+							end
+							local sz = target.Size;
+							local offX = (math.random() - 0.5) * sz.X * 0.55;
+							local offY = (math.random() - 0.5) * sz.Y * 0.55;
+							local offZ = (math.random() - 0.5) * sz.Z * 0.55;
+							local hitPos = aimPos + Vector3.new(offX, offY, offZ);
+							return hitPos, target, n, col;
+						end
 					end
 				end
 				return a, h, n, col;
@@ -1030,21 +1446,23 @@ local function setupSilentHook()
 				local realPackFire = GunNet.packFire;
 				SAEnv.emolineOrigPackFire = realPackFire;
 				GunNet.packFire = function(origin, range, bulletcount, hits, ends)
-					if SilentAim.Enabled and typeof(origin) == "Vector3" then
-						if SilentAim.Mode == "Rage" then
-							-- local bullet locks onto the target (getAim redirect), but send a
-							-- NATURAL aim to the server so other players see normal visual spread.
-							local ndir, nlen = realGetAim(origin, range);
-							if ndir then
-								local npos = origin + ndir * (nlen and math.min(nlen, range) or range);
-								if type(hits) == "table" then hits[1] = npos; end
-								if type(ends) == "table" then ends[1] = npos; end
-							end
-						elseif SilentAim.Mode ~= "Legit" then
-							if not saMissConsume() then
-								local _, aimPos = saResolveTarget(origin, range or SilentAim.MaxRange);
-								if aimPos then
-									redirectPackEnds(origin, bulletcount, ends, aimPos);
+					if typeof(origin) == "Vector3" then
+						if SilentAim.Enabled and not Backtrack.Enabled then
+							if SilentAim.Mode == "Rage" then
+								-- local bullet locks onto the target (getAim redirect), but send a
+								-- NATURAL aim to the server so other players see normal visual spread.
+								local ndir, nlen = realGetAim(origin, range);
+								if ndir then
+									local npos = origin + ndir * (nlen and math.min(nlen, range) or range);
+									if type(hits) == "table" then hits[1] = npos; end
+									if type(ends) == "table" then ends[1] = npos; end
+								end
+							elseif SilentAim.Mode ~= "Legit" then
+								if not saMissConsume() then
+									local _, aimPos = saResolveTarget(origin, range or SilentAim.MaxRange);
+									if aimPos then
+										redirectPackEnds(origin, bulletcount, ends, aimPos);
+									end
 								end
 							end
 						end
@@ -1340,9 +1758,9 @@ local theme = {
 	surface = Color3.fromRGB(18, 18, 18),
 	surfaceSoft = Color3.fromRGB(28, 28, 28),
 	surfaceElevated = Color3.fromRGB(38, 38, 38),
-	accent = Color3.fromRGB(0, 160, 255),
-	accentSoft = Color3.fromRGB(0, 115, 200),
-	accentWarm = Color3.fromRGB(70, 185, 255),
+	accent = Color3.fromRGB(255, 175, 50),
+	accentSoft = Color3.fromRGB(210, 140, 35),
+	accentWarm = Color3.fromRGB(255, 205, 90),
 	text = Color3.fromRGB(235, 235, 235),
 	textDim = Color3.fromRGB(130, 130, 130),
 	danger = Color3.fromRGB(230, 60, 60),
@@ -1882,7 +2300,7 @@ local function createToggle(parent, caption, defaultValue, onChange, cfgKey)
 	local function render()
 		switchGradient.Enabled = state;
 		tween(switch, 0.16, {
-			BackgroundColor3 = (state and Color3.new(1, 1, 1)) or theme.surfaceElevated,
+			BackgroundColor3 = (state and theme.accent) or theme.surfaceElevated,
 			BackgroundTransparency = (state and 0.15) or 0.1,
 		});
 		if state then
@@ -2075,7 +2493,10 @@ local function createSlider(parent, caption, minValue, maxValue, value, onChange
 	return row;
 end
 local activeColorPanel = nil;
-local function createColorRow(parent, caption, getColor, setColor, cfgKey)
+local function createColorRow(parent, caption, getColor, setColor, cfgKey, resetColor)
+	if (typeof(resetColor) ~= "Color3") then
+		resetColor = Color3.fromRGB(255, 255, 255);
+	end
 	local rawSetColor = setColor;
 	setColor = function(c)
 		if (typeof(c) ~= "Color3") then
@@ -2112,7 +2533,7 @@ local function createColorRow(parent, caption, getColor, setColor, cfgKey)
 	wrap.AutomaticSize = Enum.AutomaticSize.Y;
 	wrap.BorderSizePixel = 0;
 	wrap.Parent = parent;
-	applyCorner(wrap, 5);
+	applyCorner(wrap, 10);
 	addHover(wrap, theme.surfaceElevated, theme.surfaceSoft);
 	local pad = Instance.new("UIPadding");
 	pad.PaddingTop = UDim.new(0, 6);
@@ -2130,7 +2551,7 @@ local function createColorRow(parent, caption, getColor, setColor, cfgKey)
 	headerRow.Parent = wrap;
 	local label = Instance.new("TextLabel");
 	label.BackgroundTransparency = 1;
-	label.Size = UDim2.new(1, -118, 1, 0);
+	label.Size = UDim2.new(1, -170, 1, 0);
 	label.Font = Enum.Font.GothamSemibold;
 	label.TextColor3 = theme.text;
 	label.TextSize = 12;
@@ -2146,7 +2567,8 @@ local function createColorRow(parent, caption, getColor, setColor, cfgKey)
 	colorButton.Text = "";
 	colorButton.BorderSizePixel = 0;
 	colorButton.Parent = headerRow;
-	applyCorner(colorButton, 5);
+	applyCorner(colorButton, 6);
+	applyStroke(colorButton, theme.strokeSoft, 1.5, 0.4);
 
 	local panel = Instance.new("Frame");
 	panel.BackgroundColor3 = theme.surface;
@@ -2437,6 +2859,9 @@ local function createColorRow(parent, caption, getColor, setColor, cfgKey)
 	cfgRegister(cfgKey, function() return getColor(); end, function(v)
 		if (typeof(v) == "Color3") then
 			setColor(v);
+			pcall(function()
+				if colorButton.Parent then colorButton.BackgroundColor3 = v; end
+			end);
 		end
 	end);
 	return wrap;
@@ -3077,7 +3502,7 @@ local function setTab(name)
 			entry.iconImage.ImageColor3 = Color3.new(1, 1, 1);
 		end
 		entry.indicator.Size = UDim2.new(0, 2, 0, 0);
-		tween(entry.button, 0.2, { BackgroundColor3 = Color3.fromRGB(64, 82, 112), BackgroundTransparency = 0.2 });
+		tween(entry.button, 0.2, { BackgroundColor3 = theme.accent, BackgroundTransparency = 0.2 });
 		tween(entry.button, 0.2, { TextColor3 = Color3.new(1, 1, 1) });
 		tween(entry.indicator, 0.22, { Size = UDim2.new(0, 2, 0.5, 0) }, Enum.EasingStyle.Back, Enum.EasingDirection.Out);
 	end
@@ -3251,7 +3676,7 @@ local function createTabButton(name, iconId, pageObj)
 	};
 	local function applyVisual()
 		local active = entry.active;
-		btn.BackgroundColor3 = (active and Color3.fromRGB(64, 82, 112)) or theme.surfaceSoft;
+		btn.BackgroundColor3 = (active and theme.accent) or theme.surfaceSoft;
 		btn.BackgroundTransparency = (active and 0.2) or 0.55;
 		btn.TextColor3 = Color3.new(1, 1, 1);
 		indicator.Visible = active;
@@ -3343,6 +3768,21 @@ createSlider(trigRight, "Delay (seconds)", 0, 2, Config.Trigger.Delay, function(
 	Config.Trigger.Delay = v;
 end, 2, "trigger.delay");
 
+-- ===== Backtrack (стрельба по прошлой позиции хитбокса) =====
+local btSec = createSection(CombatPage, "Backtrack", "left");
+createToggle(btSec, "Enable Backtrack", Config.SilentAim.Backtrack.Enabled, function(v)
+	Config.SilentAim.Backtrack.Enabled = v;
+end, "backtrack.enable");
+createSlider(btSec, "Backtrack Delay (ms)", 0, 500, Config.SilentAim.Backtrack.DelayMs, function(v)
+	Config.SilentAim.Backtrack.DelayMs = v;
+end, 0, "backtrack.delay");
+createToggle(btSec, "Show Backtrack Hitbox", Config.SilentAim.Backtrack.ShowHitbox, function(v)
+	Config.SilentAim.Backtrack.ShowHitbox = v;
+end, "backtrack.hitbox");
+createColorRow(btSec, "Backtrack Hitbox Color", function() return Config.SilentAim.Backtrack.HitboxColor; end, function(c)
+	Config.SilentAim.Backtrack.HitboxColor = c;
+end, "backtrack.hitboxColor", Color3.fromRGB(255, 255, 255));
+
 -- ===== Aim: Silent Aim =====
 local aimLeft = createSection(AimPage, "Silent Aim", "left");
 local silentAimToggleSetter = createToggle(aimLeft, "Enable Silent Aim", Config.SilentAim.Enabled, function(v)
@@ -3408,32 +3848,37 @@ createSlider(legitSec, "Miss Chance (%)", 0, 100, Config.SilentAim.Legit.MissPer
 end, 0, "silentAim.legitMissPercent");
 updateSilentModeSections(Config.SilentAim.Mode);
 
--- ===== Visuals: ESP =====
-local espNames = createSection(EspPage, "Names", "left");
-local nameToggle = createToggle(espNames, "Show Name", Config.Esp.Name, function(v)
-	Config.Esp.Name = v;
-end, "esp.name");
-createKeybind(espNames, "Show Name Keybind", {
-	key = Config.Esp.NameKeybind,
-	initialState = Config.Esp.Name,
-	cfgKey = "esp.nameKey",
-	toggle = nameToggle,
-	onKey = function(key)
-		Config.Esp.NameKeybind = key;
-	end,
-	apply = function(v)
-		Config.Esp.Name = v;
-		nameToggle(v);
-	end,
-});
-local espDist = createSection(EspPage, "Distance", "right");
-createSlider(espDist, "Max Distance", 50, 10000, Config.Esp.MaxDist, function(v)
-	Config.Esp.MaxDist = v;
-end, 0, "esp.maxDist");
+-- ===== Visuals: ESP (порт из backup.lua) — работает только на таргет =====
+local espSection = createSection(EspPage, "ESP", "left");
+createToggle(espSection, "Enable ESP", Config.Esp.Enabled, function(v)
+	Config.Esp.Enabled = v;
+	if _G._emolineEspEnsureAll then _G._emolineEspEnsureAll(); end
+end, "esp.enabled");
+createToggle(espSection, "ESP Boxes", Config.Esp.Boxes, function(v)
+	Config.Esp.Boxes = v;
+end, "esp.boxes");
+createToggle(espSection, "ESP Names", Config.Esp.Names, function(v)
+	Config.Esp.Names = v;
+end, "esp.names");
+createToggle(espSection, "ESP Health", Config.Esp.Health, function(v)
+	Config.Esp.Health = v;
+end, "esp.health");
+createColorRow(espSection, "Box Color", function() return Config.Esp.BoxColor; end, function(c)
+	Config.Esp.BoxColor = c;
+end, "esp.boxColor", Color3.fromRGB(255, 255, 255));
+createColorRow(espSection, "Name Color", function() return Config.Esp.NameColor; end, function(c)
+	Config.Esp.NameColor = c;
+end, "esp.nameColor", Color3.fromRGB(255, 255, 255));
+createColorRow(espSection, "HP Color", function() return Config.Esp.HpColor; end, function(c)
+	Config.Esp.HpColor = c;
+end, "esp.hpColor", Color3.fromRGB(255, 255, 255));
 local espHitbox = createSection(EspPage, "Hitbox", "right");
 createToggle(espHitbox, "Show Hitbox", Config.Esp.Hitbox, function(v)
 	Config.Esp.Hitbox = v;
 end, "esp.hitbox");
+createColorRow(espHitbox, "Hitbox Color", function() return Config.Esp.HitboxColor; end, function(c)
+	Config.Esp.HitboxColor = c;
+end, "esp.hitboxColor", Color3.fromRGB(255, 255, 255));
 
 -- ===== Autoshoot =====
 local autoLeft = createSection(AutoshootPage, "Autoshoot", "left");
@@ -3603,6 +4048,71 @@ createKeybind(utilMacro, "Auto Macro", {
 	end,
 });
 
+-- ===== Aim Trainer Teleport =====
+local aimTrainerBusy = false;
+local function findAimTrainerRemote()
+	local ok, rs = pcall(function() return game:GetService("ReplicatedStorage"); end);
+	if (not ok) or (not rs) then return nil; end
+	local box = rs:FindFirstChild("AimTrainer");
+	if (not box) then return nil; end
+	local req = box:FindFirstChild("Request");
+	if (not (req and req:IsA("RemoteEvent"))) then return nil; end
+	return req;
+end
+local function aimTrainerAction()
+	if aimTrainerBusy then return; end
+	local req = findAimTrainerRemote();
+	if (not req) then return; end
+	aimTrainerBusy = true;
+	task.spawn(function()
+		local settings = {
+			Armor = 200,
+			InfinityAmmo = true,
+			BotShooting = false,
+			BotArmor = 0,
+			BotCount = 1,
+			BotDistance = 2,
+			BotHitChance = 50,
+			BotInfinityAmmo = true,
+			BotJumping = true,
+			BotSpamsKnife = false,
+			BotStrafeFrequency = 50,
+		};
+		pcall(function()
+			req:FireServer("Start", settings);
+		end);
+		local dur = Config.Utility.AimTrainer.DurationSec;
+		if (type(dur) ~= "number") then dur = 1; end
+		dur = math.clamp(dur, 0, 10);
+		if dur > 0 then
+			task.wait(dur);
+			if ((getgenv and getgenv()) or _G).emolineUnloaded then return; end
+		end
+		pcall(function()
+			req:FireServer("Stop");
+		end);
+		aimTrainerBusy = false;
+	end);
+end
+createKeybind(utilMacro, "Aim Trainer", {
+	key = Config.Utility.AimTrainer.Key,
+	mode = "Press",
+	noModeMenu = true,
+	initialState = false,
+	cfgKey = "util.atKey",
+	onKey = function(key)
+		Config.Utility.AimTrainer.Key = key;
+	end,
+	apply = function(v)
+		if v then
+			task.spawn(aimTrainerAction);
+		end
+	end,
+});
+createSlider(utilMacro, "TL Duration (s)", 0, 10, Config.Utility.AimTrainer.DurationSec, function(v)
+	Config.Utility.AimTrainer.DurationSec = v;
+end, 1, "util.atDurationSec");
+
 -- ===== Settings =====
 local settingsLeft = createSection(SettingsPage, "Menu", "left");
 createKeybind(settingsLeft, "Menu Key", {
@@ -3770,6 +4280,19 @@ createButton(settingsUnload, "Unload Script", function()
 		pcall(function() conn:Disconnect(); end);
 	end
 	liveConnections = {};
+	-- 3b. Убрать ESP и забитый нами hitbox (Drawing-объекты + per-player RenderStepped)
+	pcall(function()
+		local esp = _G._emolineEspCleanup;
+		if esp then esp(); end
+	end);
+	pcall(function()
+		local hb = _G._emolineHitboxCleanup;
+		if hb then hb(); end
+	end);
+	pcall(function()
+		local btv = _G._emolineBtVisualCleanup;
+		if btv then btv(); end
+	end);
 	-- 4. Восстановить перехваченные функции
 	local gm = SAEnv.emolineGunModule;
 	if gm then
@@ -3842,7 +4365,7 @@ createButton(settingsUnload, "Unload Script", function()
 	env.emolineSilentAimHooked = nil;
 	env.emolineGetAimHooked = nil;
 	env.emolineShootHooked = nil;
-	env.emolineUnloaded = nil;
+	env.emolineUnloaded = true;
 end);
 
 
@@ -3872,6 +4395,62 @@ task.spawn(function()
 		end
 	end
 end);
+-- ===== Backtrack aim helper для триггеров: true если прицел (mousePos) находится
+-- в экранной проекции ОТКАТАННОГО хитбокса 8x8x4 игрока (Backtrack.Enabled).
+-- Триггер стреляет по старой позиции, т.к. silent aim уже редиректит пулю туда. =====
+local function btTriggerOnTarget(p, mousePos)
+	if not (Backtrack and Backtrack.Enabled) then return false; end
+	local char = p and p.Character;
+	if not char then return false; end
+	local hrp = char:FindFirstChild("HumanoidRootPart");
+	if (not hrp) or (not hrp:IsA("BasePart")) then return false; end
+	local cam = workspace.CurrentCamera;
+	if not cam then return false; end
+	local btGetPos = SAEnv.emolineBtGetPosition;
+	if not btGetPos then return false; end
+	local pos = btGetPos(hrp, Backtrack.DelayMs);
+	if not pos then return false; end
+	local cf = hrp.CFrame - hrp.CFrame.Position + pos;
+	local minX, minY, maxX, maxY = math.huge, math.huge, -math.huge, -math.huge;
+	for _, o in ipairs({
+		Vector3.new(4, 4, 2), Vector3.new(-4, 4, 2), Vector3.new(-4, -4, 2), Vector3.new(4, -4, 2),
+		Vector3.new(4, 4, -2), Vector3.new(-4, 4, -2), Vector3.new(-4, -4, -2), Vector3.new(4, -4, -2),
+	}) do
+		local sp, onScreen = cam:WorldToViewportPoint(cf:PointToWorldSpace(o));
+		if onScreen then
+			minX = math.min(minX, sp.X); maxX = math.max(maxX, sp.X);
+			minY = math.min(minY, sp.Y); maxY = math.max(maxY, sp.Y);
+		end
+	end
+	if minX == math.huge then return false; end
+	return mousePos.X >= minX and mousePos.X <= maxX
+		and mousePos.Y >= minY and mousePos.Y <= maxY;
+end
+-- Бектрек-приоритет для триггеров: возвращает первого отмеченного игрока, чей
+-- ОТКАТАННЫЙ хитбокс 8x8x4 находится под прицелом (mousePos) и кто в пределах
+-- maxRange. Проверяется ДО логики «реальная модель под прицелом», чтобы триггер
+-- бил именно по боксу бектрека во всех режимах, а не по текущей позиции.
+local function btTriggerPick(mousePos, maxRange)
+	if not (Backtrack and Backtrack.Enabled) then return nil; end
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= LocalPlayer then
+			if GetPlayerMode(p.Name) == MODE_TRIGGER then
+				if (not isAlive(p)) or isKnockedOut(p) then continue; end
+				local char = p.Character;
+				if not char then continue; end
+				local part = getPrimaryPart(char);
+				if not part then continue; end
+				local dist = (Camera.CFrame.Position - part.Position).Magnitude;
+				if dist <= (maxRange or math.huge) then
+					if btTriggerOnTarget(p, mousePos) then
+						return p;
+					end
+				end
+			end
+		end
+	end
+	return nil;
+end
 task.spawn(function()
 	while true do
 		RunService.Heartbeat:Wait();
@@ -3896,6 +4475,16 @@ task.spawn(function()
 		local rayParams = RaycastParams.new();
 		rayParams.FilterType = Enum.RaycastFilterType.Exclude;
 		rayParams.FilterDescendantsInstances = ignoreList;
+		-- Бектрек-приоритет: если под прицелом откатный бокс — стреляем по нему
+		-- и не смотрим на реальную модель (она может быть в другой стороне).
+		local btPick = btTriggerPick(mousePos, currentRange);
+		if btPick then
+			Config.Trigger.LastShot = tick();
+			VirtualInputManager:SendMouseButtonEvent(mousePos.X, mousePos.Y, 0, true, game, 1);
+			task.wait(0.01);
+			VirtualInputManager:SendMouseButtonEvent(mousePos.X, mousePos.Y, 0, false, game, 1);
+			continue;
+		end
 		for _, p in pairs(Players:GetPlayers()) do
 			if (p == LocalPlayer) then continue; end
 			if (GetPlayerMode(p.Name) ~= MODE_TRIGGER) then continue; end
@@ -3911,6 +4500,9 @@ task.spawn(function()
 			local hit = workspace:Raycast(ray.Origin, ray.Direction * 1000, rayParams);
 			if (hit and hit.Instance) then
 				canShoot = hit.Instance:IsDescendantOf(char);
+			end
+			if (not canShoot) and btTriggerOnTarget(p, mousePos) then
+				canShoot = true;
 			end
 			if canShoot then
 				bestTarget = p;
@@ -3999,6 +4591,15 @@ task.spawn(function()
 		if ((tick() - Config.Trigger.LastShot) < Config.Trigger.Delay) then continue; end
 		local toolName = triggerToolName();
 		local toolRange = triggerWeaponRange(toolName);
+		-- Бектрек-приоритет: прицел на откатном боксе — бьём по нему, даже если
+		-- реальная модель таргета не под прицелом и до неё нет LOS.
+		local btMouse = UserInputService:GetMouseLocation();
+		local btPick = btTriggerPick(btMouse, toolRange or (Config.Trigger.MaxRange or 70));
+		if btPick then
+			Config.Trigger.LastShot = tick();
+			triggerClick();
+			continue;
+		end
 		local targetPl = nil;
 		local hitPart = mouseHitPart();
 		if hitPart then targetPl = playerFromPart(hitPart); end
@@ -4029,6 +4630,10 @@ task.spawn(function()
 					end
 				end
 				if found then targetPl = p; break; end
+				if btTriggerOnTarget(p, mousePos) and triggerHasLOS(p) then
+					targetPl = p;
+					break;
+				end
 			end
 		end
 		if targetPl then
@@ -4103,6 +4708,16 @@ task.spawn(function()
 				end
 			end
 		end
+		-- Бектрек-приоритет: если под прицелом откатный бокс таргета — стреляем
+		-- по нему в любом режиме (Player/Hitbox), не дожидаясь реальной модели.
+		local btPick = btTriggerPick(mousePos, currentRange);
+		if btPick then
+			Config.Trigger.LastShot = tick();
+			VirtualInputManager:SendMouseButtonEvent(mousePos.X, mousePos.Y, 0, true, game, 1);
+			task.wait(0.01);
+			VirtualInputManager:SendMouseButtonEvent(mousePos.X, mousePos.Y, 0, false, game, 1);
+			continue;
+		end
 		for _, p in pairs(Players:GetPlayers()) do
 			if p == LocalPlayer then continue; end
 			if GetPlayerMode(p.Name) ~= MODE_TRIGGER then continue; end
@@ -4133,6 +4748,9 @@ task.spawn(function()
 						end
 					end
 				end
+			end
+			if not canShoot then
+				canShoot = btTriggerOnTarget(p, mousePos);
 			end
 			if canShoot then
 				if mode == "Hitbox" then
@@ -4408,6 +5026,7 @@ local function rebuildPlayerListGUI()
 		nameLabel.TextSize = 12;
 		nameLabel.TextXAlignment = Enum.TextXAlignment.Left;
 		nameLabel.TextTransparency = 1;
+		nameLabel.TextStrokeTransparency = 1;
 		nameLabel.Parent = row;
 		table.insert(fadeTargets, { inst = nameLabel, prop = "TextTransparency", to = 0 });
 		local nameGradient = makeGradient(theme.accentSoft, theme.accentWarm, 90);
@@ -4491,10 +5110,10 @@ local function rebuildPlayerListGUI()
 			btn.MouseButton1Up:Connect(pressEnd);
 			btn.MouseLeave:Connect(pressEnd);
 			btn.MouseEnter:Connect(function()
-				hover.BackgroundTransparency = 0.78;
+				hover.BackgroundTransparency = (state.active and 1) or 0.78;
 			end);
 			btn.MouseLeave:Connect(function()
-				hover.BackgroundTransparency = (state.active and 0.65) or 1;
+				hover.BackgroundTransparency = 1;
 			end);
 			return btn;
 		end
@@ -4505,9 +5124,9 @@ local function rebuildPlayerListGUI()
 			modeState[neutralBtn].active = (currentMode == MODE_OFF);
 			modeState[autoBtn].active = (currentMode == MODE_AUTOSHOOT);
 			modeState[trigBtn].active = (currentMode == MODE_TRIGGER);
-			modeState[neutralBtn].hover.BackgroundTransparency = (currentMode == MODE_OFF) and 0.65 or 1;
-			modeState[autoBtn].hover.BackgroundTransparency = (currentMode == MODE_AUTOSHOOT) and 0.65 or 1;
-			modeState[trigBtn].hover.BackgroundTransparency = (currentMode == MODE_TRIGGER) and 0.65 or 1;
+			modeState[neutralBtn].hover.BackgroundTransparency = 1;
+			modeState[autoBtn].hover.BackgroundTransparency = 1;
+			modeState[trigBtn].hover.BackgroundTransparency = 1;
 			neutralBtn.Text = (currentMode == MODE_OFF) and "▶ NEUTRAL" or "NEUTRAL";
 			autoBtn.Text = (currentMode == MODE_AUTOSHOOT) and "▶ AUTOSHOT" or "AUTOSHOT";
 			trigBtn.Text = (currentMode == MODE_TRIGGER) and "▶ TRIGGER" or "TRIGGER";
@@ -4564,7 +5183,7 @@ ResetAllBtn.MouseButton1Click:Connect(function()
 end);
 TriggerAllBtn.MouseButton1Click:Connect(function()
 	Config.TriggerAllMode = not Config.TriggerAllMode;
-	actionState[TriggerAllBtn].hover.BackgroundTransparency = Config.TriggerAllMode and 0.65 or 1;
+	actionState[TriggerAllBtn].hover.BackgroundTransparency = 1;
 	for _, plr in pairs(Players:GetPlayers()) do
 		if (plr ~= LocalPlayer) then
 			SetPlayerMode(plr.Name, Config.TriggerAllMode and MODE_TRIGGER or MODE_OFF);
@@ -4589,214 +5208,542 @@ Players.PlayerRemoving:Connect(function(player)
 		savedTargetModes[player.UserId] = leavingMode;
 		Config.Targeting.Selected[player.Name] = nil;
 	end
-	if espObjects[player] then
-		if espObjects[player].label then
-			espObjects[player].label:Destroy();
-		end
-		espObjects[player] = nil;
-	end
 	rebuildPlayerListGUI();
 end);
 rebuildPlayerListGUI();
--- [FIX] Show Name на GUI-лейблах: Drawing.Text не гарантированно рендерится в Real,
--- GUI рендерится всегда (тот же подход, что и у FOV-кольца).
-local EspNameGui = Instance.new("ScreenGui");
-EspNameGui.Name = "emolineNameEsp";
-EspNameGui.ResetOnSpawn = false;
-EspNameGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling;
-EspNameGui.IgnoreGuiInset = true;
-local espGuiOk = pcall(function()
-	EspNameGui.Parent = resolveHuiParent();
-end);
-if not espGuiOk then
-	EspNameGui.Parent = LocalPlayer:WaitForChild("PlayerGui");
-end
+-- ===== ESP: Drawing-based (ported from backup.lua) =====
+do
+    local espObjects = {} -- player -> {box, name, hp, conn}
 
-local function ensureNameLabel(plr)
-	if not espObjects[plr] then
-		espObjects[plr] = {};
-	end
-	local label = espObjects[plr].label;
-	if not label then
-		label = Instance.new("TextLabel");
-		label.Name = "emolineNameLabel";
-		label.Size = UDim2.new(0, 220, 0, 16);
-		label.BackgroundTransparency = 1;
-		label.Font = Enum.Font.GothamBold;
-		label.TextSize = 12;
-		label.TextColor3 = Color3.new(1, 1, 1);
-		label.TextStrokeTransparency = 0;
-		label.TextStrokeColor3 = Color3.new(0, 0, 0);
-		label.TextXAlignment = Enum.TextXAlignment.Center;
-		label.AnchorPoint = Vector2.new(0.5, 1);
-		label.ZIndex = 30;
-		label.Parent = EspNameGui;
-		espObjects[plr].label = label;
-	end
-	return label;
-end
+    local function canUseDrawingObject(obj)
+        if obj == nil or type(obj) == 'number' then
+            return false
+        end
+        return pcall(function()
+            local _ = obj.Visible
+        end)
+    end
 
-connectLive(RunService.RenderStepped, function()
-	local camera = workspace.CurrentCamera;
-	if not Config.Esp.Name then
-		for _, objTable in pairs(espObjects) do
-			if objTable.label then
-				objTable.label.Visible = false;
-			end
-		end
-		return;
-	end
-	if not camera then return; end
-	for _, plr in pairs(Players:GetPlayers()) do
-		if (plr == LocalPlayer) then continue; end
-		if (not isAlive(plr) or isKnockedOut(plr)) then
-			if (espObjects[plr] and espObjects[plr].label) then
-				espObjects[plr].label.Visible = false;
-			end
-			continue;
-		end
-		local char = plr.Character;
-		if not char then continue; end
-		local head = char:FindFirstChild("Head");
-		if not head then continue; end
-		local dist = getDistanceBetweenPlayers(plr);
-		if (dist > Config.Esp.MaxDist) then
-			if (espObjects[plr] and espObjects[plr].label) then
-				espObjects[plr].label.Visible = false;
-			end
-			continue;
-		end
-		local headScreen, onScreen = camera:WorldToViewportPoint(head.Position);
-		if not onScreen then
-			if (espObjects[plr] and espObjects[plr].label) then
-				espObjects[plr].label.Visible = false;
-			end
-			continue;
-		end
-		local label = ensureNameLabel(plr);
-		label.Visible = true;
-		label.Text = plr.DisplayName;
-		label.Position = UDim2.new(0, headScreen.X, 0, headScreen.Y - 18);
-	end
-	for plr, objTable in pairs(espObjects) do
-		if (not plr or not plr.Parent) then
-			if objTable.label then
-				objTable.label:Destroy();
-			end
-			espObjects[plr] = nil;
-		end
-	end
-end);
--- ===== Visual Hitbox (3D box on targeted players only) =====
-local hitboxLines = {};
-local HITBOX_COLOR = Color3.fromRGB(255, 0, 0);
-local function getOrCreateHitboxLines(plr)
-	if hitboxLines[plr] then return hitboxLines[plr]; end
-	local lines = {};
-	for i = 1, 12 do
-		local line = Drawing.new("Line");
-		line.Thickness = 1.5;
-		line.Color = HITBOX_COLOR;
-		line.Transparency = 1;
-		line.Visible = false;
-		lines[i] = line;
-	end
-	hitboxLines[plr] = lines;
-	return lines;
+    local function setDrawingVisible(obj, state)
+        if not canUseDrawingObject(obj) then return end
+        pcall(function()
+            obj.Visible = state and true or false
+        end)
+    end
+
+    local function getHealthColor(hum)
+        if not hum or not hum.Health or not hum.MaxHealth then return Color3.new(1,1,1) end
+        local pct = hum.Health / (hum.MaxHealth > 0 and hum.MaxHealth or 1)
+        if pct > 0.7 then return Color3.fromRGB(0,255,127) end
+        if pct > 0.3 then return Color3.fromRGB(255,255,0) end
+        return Color3.fromRGB(255,60,60)
+    end
+
+    local function removeEspFor(player)
+        local s = espObjects[player]
+        if not s then return end
+        pcall(function()
+            if s.box and s.box.Remove then s.box:Remove() end
+            if s.name and s.name.Remove then s.name:Remove() end
+            if s.hp and s.hp.Remove then s.hp:Remove() end
+            if s.conn and s.conn.Disconnect then s.conn:Disconnect() end
+        end)
+        espObjects[player] = nil
+    end
+
+    local function createEspFor(player)
+        if SAEnv.emolineUnloaded then return end
+        if espObjects[player] then return end
+        local ok, box = pcall(function() return Drawing.new('Square') end)
+        local okN, name = pcall(function() return Drawing.new('Text') end)
+        local okH, hp = pcall(function() return Drawing.new('Text') end)
+        if not ok or not okN or not okH then return end
+        if not canUseDrawingObject(box) or not canUseDrawingObject(name) or not canUseDrawingObject(hp) then return end
+
+        setDrawingVisible(box, false)
+        setDrawingVisible(name, false)
+        setDrawingVisible(hp, false)
+        box.Filled = false
+        box.Thickness = 1
+        name.Center = true
+        name.Outline = true
+        name.Font = Enum.Font.GothamSemibold
+        hp.Center = true
+        hp.Outline = true
+        hp.Font = Enum.Font.GothamSemibold
+
+        local conn
+        conn = RunService.RenderStepped:Connect(function()
+            if SAEnv.emolineUnloaded or not Config.Esp.Enabled or not player or not player.Character or player == Players.LocalPlayer then
+                setDrawingVisible(box, false)
+                setDrawingVisible(name, false)
+                setDrawingVisible(hp, false)
+                return
+            end
+            if not Camera then
+                Camera = workspace.CurrentCamera
+            end
+            if not Camera then
+                setDrawingVisible(box, false)
+                setDrawingVisible(name, false)
+                setDrawingVisible(hp, false)
+                return
+            end
+            local isTarget = Config.TriggerAllMode or (GetPlayerMode(player.Name) ~= MODE_OFF)
+            if not isTarget then
+                setDrawingVisible(box, false)
+                setDrawingVisible(name, false)
+                setDrawingVisible(hp, false)
+                return
+            end
+            local root = player.Character:FindFirstChild('HumanoidRootPart')
+            local head = player.Character:FindFirstChild('Head')
+            local hum = player.Character:FindFirstChildOfClass('Humanoid')
+            if not root or not hum then
+                setDrawingVisible(box, false)
+                setDrawingVisible(name, false)
+                setDrawingVisible(hp, false)
+                return
+            end
+            local rootPos, onScreen = Camera:WorldToViewportPoint(root.Position)
+            if not onScreen then
+                setDrawingVisible(box, false)
+                setDrawingVisible(name, false)
+                setDrawingVisible(hp, false)
+                return
+            end
+            local headPos = head and Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0)) or rootPos
+            local legPos = Camera:WorldToViewportPoint(root.Position - Vector3.new(0, 3, 0))
+            local boxHeight = math.abs(headPos.Y - legPos.Y)
+            local boxWidth = boxHeight / 1.6
+            local healthColor = getHealthColor(hum)
+            local boxColor = Config.Esp.BoxColor or healthColor
+            local nameColor = Config.Esp.NameColor or healthColor
+            local hpColor = Config.Esp.HpColor or healthColor
+            if Config.Esp.Boxes and not Config.Esp.Hitbox then
+                setDrawingVisible(box, true)
+                box.Color = boxColor
+                box.Size = Vector2.new(boxWidth, boxHeight)
+                box.Position = Vector2.new(rootPos.X - boxWidth / 2, rootPos.Y - boxHeight / 2)
+            else
+                setDrawingVisible(box, false)
+            end
+            if Config.Esp.Names then
+                setDrawingVisible(name, true)
+                name.Text = (player.DisplayName or player.Name)
+                name.Color = nameColor
+                name.Size = 17
+                name.Position = Vector2.new(rootPos.X, rootPos.Y - (boxHeight / 2) - 34)
+            else
+                setDrawingVisible(name, false)
+            end
+            if Config.Esp.Health then
+                setDrawingVisible(hp, true)
+                hp.Text = math.floor(hum.Health) .. " HP"
+                hp.Color = hpColor
+                hp.Size = 15
+                hp.Position = Vector2.new(rootPos.X, rootPos.Y - (boxHeight / 2) - 14)
+            else
+                setDrawingVisible(hp, false)
+            end
+        end)
+        espObjects[player] = { box = box, name = name, hp = hp, conn = conn }
+        player.AncestryChanged:Connect(function()
+            if not player.Parent then removeEspFor(player) end
+        end)
+        Players.PlayerRemoving:Connect(function(pl)
+            if pl == player then removeEspFor(pl) end
+        end)
+    end
+
+    local espPlayerAddedConn
+    espPlayerAddedConn = Players.PlayerAdded:Connect(function(p)
+        task.wait(0.05)
+        if SAEnv.emolineUnloaded then return end
+        if Config.Esp.Enabled then createEspFor(p) end
+    end)
+    connectLive(RunService.RenderStepped, function()
+        for p, s in pairs(espObjects) do
+            if (not p) or (not p.Parent) then
+                removeEspFor(p)
+            end
+        end
+    end)
+    espEnsureAll = function()
+        if Config.Esp.Enabled then
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p ~= Players.LocalPlayer then createEspFor(p) end
+            end
+        else
+            for p, _ in pairs(espObjects) do removeEspFor(p) end
+        end
+    end
+    _G._emolineEspEnsureAll = espEnsureAll
+    _G._emolineEspCleanup = function()
+        if espPlayerAddedConn then
+            pcall(function() espPlayerAddedConn:Disconnect(); end)
+            espPlayerAddedConn = nil
+        end
+        for p, _ in pairs(espObjects) do
+            removeEspFor(p)
+        end
+    end
 end
-local hitboxEdges = {
-	{1,2},{2,3},{3,4},{4,1},
-	{5,6},{6,7},{7,8},{8,5},
-	{1,5},{2,6},{3,7},{4,8},
-};
-local function getCharCorners(char)
-	local hrp = char:FindFirstChild("HumanoidRootPart");
-	if not hrp then return nil; end
-	local cf = hrp.CFrame;
-	local halfW, halfH, halfD = 4, 4, 2;
-	return {
-		(cf * CFrame.new( halfW,  halfH,  halfD)).Position,
-		(cf * CFrame.new(-halfW,  halfH,  halfD)).Position,
-		(cf * CFrame.new(-halfW, -halfH,  halfD)).Position,
-		(cf * CFrame.new( halfW, -halfH,  halfD)).Position,
-		(cf * CFrame.new( halfW,  halfH, -halfD)).Position,
-		(cf * CFrame.new(-halfW,  halfH, -halfD)).Position,
-		(cf * CFrame.new(-halfW, -halfH, -halfD)).Position,
-		(cf * CFrame.new( halfW, -halfH, -halfD)).Position,
+-- ===== Backtrack hitbox visual (3D через Drawing Quad+Line) =====
+-- Полупрозрачный заполненный куб (6 граней Quad + 12 рёбер Line) на ОТКАТАННОЙ
+-- позиции HumanoidRootPart для ВСЕХ живых игроков. Размеры как в "Show Hitbox":
+-- половины 4,4,2 -> полный 8x8x4. Повторный запуск скрипта СНАЧАЛА гасит
+-- предыдущий цикл (teardown в emolineBtVisualReg), чтобы боксы не двоились.
+-- Fallback на текущую позицию убран: бокс рисуется только там, где реально есть
+-- откатная история (иначе бокс «бегает» без привязки к игроку).
+do
+	local genv = (getgenv and getgenv()) or _G;
+	local regKey = "emolineBtVisualReg";
+	if genv[regKey] and type(genv[regKey].teardown) == "function" then
+		pcall(genv[regKey].teardown);
+	end
+	local btLines = {};
+	local btFaces = {};
+	local BT_COLOR = Color3.fromRGB(255, 255, 255);
+	local function getBtHitboxColor()
+		local c = Config.SilentAim.Backtrack.HitboxColor;
+		if (typeof(c) == "Color3") then return c; end
+		return Color3.fromRGB(255, 255, 255);
+	end
+	local BT_FILL = 0.55;
+	local BT_EDGES = {
+		{1,2},{2,3},{3,4},{4,1},
+		{5,6},{6,7},{7,8},{8,5},
+		{1,5},{2,6},{3,7},{4,8},
 	};
-end
-connectLive(RunService.RenderStepped, function()
-	if not Config.Esp.Hitbox then
-		for _, lines in pairs(hitboxLines) do
-			for _, line in ipairs(lines) do
+	local BT_FACES = {
+		{1,4,3,2},
+		{5,8,7,6},
+		{1,5,8,4},
+		{2,6,7,3},
+		{1,5,6,2},
+		{4,3,7,8},
+	};
+	local function btGetSet(plr)
+		if btLines[plr] and btFaces[plr] then return true; end
+		local lines = {};
+		local faces = {};
+		local okL, okF = true, true;
+		for i = 1, 12 do
+			local ok, line = pcall(function() return Drawing.new("Line"); end)
+			if ok and line then
+				line.Thickness = 1.5;
+				line.Color = BT_COLOR;
+				line.Transparency = 1;
 				line.Visible = false;
+				lines[i] = line;
+			else
+				okL = false;
 			end
 		end
-		return;
+		for i = 1, 6 do
+			local ok, quad = pcall(function() return Drawing.new("Quad"); end)
+			if ok and quad then
+				quad.Filled = true;
+				quad.Color = BT_COLOR;
+				quad.Transparency = BT_FILL;
+				quad.Visible = false;
+				faces[i] = quad;
+			else
+				okF = false;
+			end
+		end
+		btLines[plr] = okL and lines or nil;
+		btFaces[plr] = okF and faces or nil;
+		return (btLines[plr] ~= nil) or (btFaces[plr] ~= nil);
 	end
-	local cam = workspace.CurrentCamera;
-	if not cam then return; end
-	for _, plr in pairs(Players:GetPlayers()) do
-		if (plr == LocalPlayer) then continue; end
-		if GetPlayerMode(plr.Name) == MODE_OFF then
-			if hitboxLines[plr] then
-				for _, line in ipairs(hitboxLines[plr]) do
-					line.Visible = false;
-				end
-			end
-			continue;
+	local function btHide(plr)
+		local lines = btLines[plr];
+		if lines then
+			for _, line in ipairs(lines) do pcall(function() line.Visible = false; end); end
 		end
-		local char = plr.Character;
-		if not char or not isAlive(plr) or isKnockedOut(plr) then
-			if hitboxLines[plr] then
-				for _, line in ipairs(hitboxLines[plr]) do
-					line.Visible = false;
-				end
-			end
-			continue;
-		end
-		local corners3D = getCharCorners(char);
-		if not corners3D then
-			if hitboxLines[plr] then
-				for _, line in ipairs(hitboxLines[plr]) do
-					line.Visible = false;
-				end
-			end
-			continue;
-		end
-		local screenPts = {};
-		local anyBehind = false;
-		for i, pt in ipairs(corners3D) do
-			local sp, onScreen = cam:WorldToViewportPoint(pt);
-			screenPts[i] = Vector2.new(sp.X, sp.Y);
-			if sp.Z < 0 then anyBehind = true; end
-		end
-		local lines = getOrCreateHitboxLines(plr);
-		for idx, edge in ipairs(hitboxEdges) do
-			local a = screenPts[edge[1]];
-			local b = screenPts[edge[2]];
-			lines[idx].From = a;
-			lines[idx].To = b;
-			lines[idx].Visible = not anyBehind;
+		local faces = btFaces[plr];
+		if faces then
+			for _, quad in ipairs(faces) do pcall(function() quad.Visible = false; end); end
 		end
 	end
-	for plr, lines in pairs(hitboxLines) do
-		if (not plr or not plr.Parent) then
+	local function btCorners(cf)
+		return {
+			(cf * CFrame.new( 4,  4,  2)).Position,
+			(cf * CFrame.new(-4,  4,  2)).Position,
+			(cf * CFrame.new(-4, -4,  2)).Position,
+			(cf * CFrame.new( 4, -4,  2)).Position,
+			(cf * CFrame.new( 4,  4, -2)).Position,
+			(cf * CFrame.new(-4,  4, -2)).Position,
+			(cf * CFrame.new(-4, -4, -2)).Position,
+			(cf * CFrame.new( 4, -4, -2)).Position,
+		};
+	end
+	local function btRemoveSet(plr)
+		local lines = btLines[plr];
+		btLines[plr] = nil;
+		if lines then
+			for _, line in ipairs(lines) do pcall(function() line:Remove(); end); end
+		end
+		local faces = btFaces[plr];
+		btFaces[plr] = nil;
+		if faces then
+			for _, quad in ipairs(faces) do pcall(function() quad:Remove(); end); end
+		end
+	end
+	local conn = connectLive(RunService.RenderStepped, function()
+		if SAEnv.emolineUnloaded then
+			for plr in pairs(btLines) do btRemoveSet(plr); end
+			for plr in pairs(btFaces) do btRemoveSet(plr); end
+			return;
+		end
+		local cam = workspace.CurrentCamera;
+		if not cam then return; end
+		local btGetPos = SAEnv.emolineBtGetPosition;
+		if not btGetPos then return; end
+		local enabled = Backtrack.Enabled and Backtrack.ShowHitbox and (not Config.Esp.Hitbox);
+		for _, p in ipairs(Players:GetPlayers()) do
+			if not ((p == LocalPlayer) or (GetPlayerMode(p.Name) ~= MODE_TRIGGER) or (not enabled) or (not isAlive(p)) or isKnockedOut(p)) then
+				local c = p.Character;
+				if c then
+					local hrp = c:FindFirstChild("HumanoidRootPart");
+					if (hrp and hrp:IsA("BasePart")) then
+						local pos = btGetPos(hrp, Backtrack.DelayMs);
+						if pos then
+							local cf = hrp.CFrame - hrp.CFrame.Position + pos;
+							local corners = btCorners(cf);
+							local screenPts = {};
+							local behind = false;
+							for _, p3 in ipairs(corners) do
+								local sp = cam:WorldToViewportPoint(p3);
+								if sp.Z < 0.1 then
+									behind = true;
+								end
+								table.insert(screenPts, Vector2.new(sp.X, sp.Y));
+							end
+							if behind then
+								btHide(p);
+							elseif btGetSet(p) then
+								local lines = btLines[p];
+								if lines then
+									for idx, edge in ipairs(BT_EDGES) do
+										local line = lines[idx];
+										if line then
+line.From = screenPts[edge[1]];
+											line.To = screenPts[edge[2]];
+											line.Color = getBtHitboxColor();
+											line.Visible = true;
+										end
+									end
+								end
+								local faces = btFaces[p];
+								if faces then
+									for idx, quad in ipairs(faces) do
+										local f = BT_FACES[idx];
+										if quad then
+											quad.PointA = screenPts[f[1]];
+											quad.PointB = screenPts[f[2]];
+											quad.PointC = screenPts[f[3]];
+											quad.PointD = screenPts[f[4]];
+											quad.Color = getBtHitboxColor();
+											quad.Visible = true;
+										end
+									end
+								end
+							end
+						else
+							btHide(p);
+						end
+					else
+						btHide(p);
+					end
+				else
+					btHide(p);
+				end
+			else
+				btHide(p);
+			end
+		end
+		for plr in pairs(btLines) do
+			if (not plr) or (not plr.Parent) then
+				btRemoveSet(plr);
+			end
+		end
+		for plr in pairs(btFaces) do
+			if (not plr) or (not plr.Parent) then
+				btRemoveSet(plr);
+			end
+		end
+	end);
+	local function btCleanup()
+		for plr in pairs(btLines) do btRemoveSet(plr); end
+		for plr in pairs(btFaces) do btRemoveSet(plr); end
+	end
+	genv[regKey] = {
+		teardown = function()
+			btCleanup();
+			if conn and conn.Disconnect then pcall(function() conn:Disconnect(); end); end
+			genv[regKey] = nil;
+		end,
+		cleanup = btCleanup,
+	};
+	Players.PlayerRemoving:Connect(function(player)
+		btRemoveSet(player);
+	end);
+	_G._emolineBtVisualCleanup = btCleanup;
+end
+-- ===== Show Hitbox: wireframe (Drawing-based) =====
+do
+	local genv = (getgenv and getgenv()) or _G;
+	local regKey = "emolineHitboxVisualReg";
+	if genv[regKey] and type(genv[regKey].teardown) == "function" then
+		pcall(genv[regKey].teardown);
+	end
+	local hitboxLines = {};
+	local HITBOX_COLOR = Color3.fromRGB(255, 255, 255);
+	local function getHitboxColor()
+		local c = Config.Esp.HitboxColor;
+		if (typeof(c) == "Color3") then return c; end
+		return Color3.fromRGB(255, 255, 255);
+	end
+	local function getOrCreateHitboxLines(plr)
+		if hitboxLines[plr] then return hitboxLines[plr]; end
+		local lines = {};
+		for i = 1, 12 do
+			local ok, line = pcall(function() return Drawing.new("Line"); end)
+			if ok and line then
+				line.Thickness = 1.5;
+				line.Color = getHitboxColor();
+				line.Transparency = 1;
+				line.Visible = false;
+				lines[i] = line;
+			end
+		end
+		hitboxLines[plr] = lines;
+		return lines;
+	end
+	local hitboxEdges = {
+		{1,2},{2,3},{3,4},{4,1},
+		{5,6},{6,7},{7,8},{8,5},
+		{1,5},{2,6},{3,7},{4,8},
+	};
+	local function getCharCorners(char)
+		local hrp = char:FindFirstChild("HumanoidRootPart");
+		if not hrp then return nil; end
+		local cf = hrp.CFrame;
+		if Backtrack.Enabled and Backtrack.ShowHitbox then
+			local btGetPos = SAEnv.emolineBtGetPosition;
+			if btGetPos then
+				local pos = btGetPos(hrp, Backtrack.DelayMs);
+				if pos then
+					cf = cf - cf.Position + pos;
+				end
+			end
+		end
+		local halfW, halfH, halfD = 4, 4, 2;
+		return {
+			(cf * CFrame.new( halfW,  halfH,  halfD)).Position,
+			(cf * CFrame.new(-halfW,  halfH,  halfD)).Position,
+			(cf * CFrame.new(-halfW, -halfH,  halfD)).Position,
+			(cf * CFrame.new( halfW, -halfH,  halfD)).Position,
+			(cf * CFrame.new( halfW,  halfH, -halfD)).Position,
+			(cf * CFrame.new(-halfW,  halfH, -halfD)).Position,
+			(cf * CFrame.new(-halfW, -halfH, -halfD)).Position,
+			(cf * CFrame.new( halfW, -halfH, -halfD)).Position,
+		};
+	end
+	local hitboxConn = connectLive(RunService.RenderStepped, function()
+		if not Config.Esp.Hitbox then
+			for plr, lines in pairs(hitboxLines) do
+				for _, line in ipairs(lines) do
+					pcall(function() line.Visible = false; end);
+				end
+			end
+			return;
+		end
+		local cam = workspace.CurrentCamera;
+		if not cam then return; end
+		for _, plr in pairs(Players:GetPlayers()) do
+			if plr == LocalPlayer then
+				if hitboxLines[plr] then
+					for _, line in ipairs(hitboxLines[plr]) do pcall(function() line.Visible = false; end); end
+				end
+				continue;
+			end
+			local isTarget = Config.TriggerAllMode or (GetPlayerMode(plr.Name) ~= MODE_OFF);
+			local char = plr.Character;
+			if (not isTarget) or (not char) or (not isAlive(plr)) or isKnockedOut(plr) then
+				if hitboxLines[plr] then
+					for _, line in ipairs(hitboxLines[plr]) do pcall(function() line.Visible = false; end); end
+				end
+				continue;
+			end
+			local corners = getCharCorners(char);
+			if not corners then
+				if hitboxLines[plr] then
+					for _, line in ipairs(hitboxLines[plr]) do pcall(function() line.Visible = false; end); end
+				end
+				continue;
+			end
+			local screenPts = {};
+			local allOnScreen = true;
+			for _, p3 in ipairs(corners) do
+				local sp = cam:WorldToViewportPoint(p3);
+				if sp.Z < 0.1 then allOnScreen = false; end
+				table.insert(screenPts, Vector2.new(sp.X, sp.Y));
+			end
+			local lines = getOrCreateHitboxLines(plr);
+			if not allOnScreen then
+				for _, line in ipairs(lines) do
+					pcall(function() line.Visible = false; end);
+				end
+				continue;
+			end
+			for idx, edge in ipairs(hitboxEdges) do
+				local a, b = screenPts[edge[1]], screenPts[edge[2]];
+				local line = lines[idx];
+				if line then
+					line.From = a;
+					line.To = b;
+					line.Color = getHitboxColor();
+					line.Visible = true;
+				end
+			end
+		end
+		for plr, lines in pairs(hitboxLines) do
+			if (not plr) or (not plr.Parent) then
+				for _, line in ipairs(lines) do
+					pcall(function() line:Remove(); end);
+				end
+				hitboxLines[plr] = nil;
+			end
+		end
+	end);
+	Players.PlayerRemoving:Connect(function(player)
+		if hitboxLines[player] then
+			for _, line in ipairs(hitboxLines[player]) do
+				pcall(function() line:Remove(); end);
+			end
+			hitboxLines[player] = nil;
+		end
+	end);
+	_G._emolineHitboxCleanup = function()
+		for plr, lines in pairs(hitboxLines) do
 			for _, line in ipairs(lines) do
 				pcall(function() line:Remove(); end);
 			end
 			hitboxLines[plr] = nil;
 		end
 	end
-end);
-Players.PlayerRemoving:Connect(function(player)
-	if hitboxLines[player] then
-		for _, line in ipairs(hitboxLines[player]) do
-			pcall(function() line:Remove(); end);
-		end
-		hitboxLines[player] = nil;
-	end
-end);
+	genv[regKey] = {
+		teardown = function()
+			if _G._emolineHitboxCleanup then pcall(_G._emolineHitboxCleanup); end
+			if hitboxConn and hitboxConn.Disconnect then pcall(function() hitboxConn:Disconnect(); end); end
+			genv[regKey] = nil;
+		end,
+		cleanup = _G._emolineHitboxCleanup,
+	};
+end
 LocalPlayer.CharacterAdded:Connect(function()
 	task.wait(1);
 end);
