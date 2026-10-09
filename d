@@ -28,8 +28,11 @@ local emolineGenv = (getgenv and getgenv()) or _G;
 --        шлёт репорты через ExamsReport:FireServer
 -- Подход: setupvalue (без hookmetamethod, без hookfunction на closure).
 -- AC#1: зануляем MainEvent_2 upvalue в _syncBuffer -> не может FireServer
--- AC#2: ставим u67=true -> все циклы проверки останавливаются
-local examsG = (getgenv and getgenv()) or _G;
+-- AC#2: ставим u67=true (гасит sweep/report/LogService/aim-strike) И
+--        дополнительно зануляем сам upvalue ExamsReport (RemoteEvent) —
+--        reportSize() (size_mismatch при тампере хитбокса/HRP) НЕ проверяет
+--        u67 перед FireServer, поэтому одного флага недостаточно: зануление
+--        инстанса рвёт reportSize так же, как MainEvent_2 рвёт AC#1.
 local function muteAntiCheat()
 	pcall(function()
 		-- AC #1: _syncBuffer — зануляем RemoteEvent upvalue
@@ -59,9 +62,17 @@ local function muteAntiCheat()
 			end
 			if sweepFn then
 				local ups = getupvalues(sweepFn);
+				local foundBool, foundRemote = false, false;
 				for i, v in ipairs(ups) do
-					if type(v) == "boolean" then
+					if (not foundBool) and (type(v) == "boolean") then
 						setupvalue(sweepFn, i, true);
+						foundBool = true;
+					elseif (not foundRemote) and (type(v) == "userdata") and (typeof(v) == "Instance") and (v.ClassName == "RemoteEvent") then
+						-- ExamsReport: общий upvalue с reportSize(), которая не смотрит на u67
+						setupvalue(sweepFn, i, nil);
+						foundRemote = true;
+					end
+					if foundBool and foundRemote then
 						break;
 					end
 				end
@@ -87,7 +98,7 @@ local function muteAntiCheat()
 	end);
 end
 muteAntiCheat();
-examsG.emolineAcMuted = true;
+emolineGenv.emolineAcMuted = true;
 -- Самовосстанавливающийся мьютер: игра пересоздаёт AC (респавн / загрузка персонажа),
 -- поэтому глушим заново по циклу и сразу после появления персонажа.
 task.spawn(function()
@@ -117,11 +128,16 @@ emolineGenv.emolineSilentAimHooked = nil;
 emolineGenv.emolineGetAimHooked = nil;
 emolineGenv.emolineShootHooked = nil;
 local function destroyGuiByName(name)
+	-- FindFirstChild возвращает только ПЕРВОГО сиблинга с этим именем: если дубли уже
+	-- накопились (повторные live-reload без полного rejoin), один проход чистил только
+	-- один экземпляр, а остальные молча оставались висеть поверх нового (отсюда "старый
+	-- непрозрачный Keybinds поверх нового стеклянного"). Теперь удаляются ВСЕ совпадения.
 	for _, container in ipairs({ CoreGui, getHui() }) do
 		if container then
-			local child = container:FindFirstChild(name);
-			if child then
-				pcall(function() child:Destroy(); end);
+			for _, child in ipairs(container:GetChildren()) do
+				if child.Name == name then
+					pcall(function() child:Destroy(); end);
+				end
 			end
 		end
 	end
@@ -309,6 +325,7 @@ local LOCAL_WHITELIST = {
 	"612072",
 	"thebindingofisaac547",
     "Hronk5497",
+    "KMSGWjCBta", -- тестовый аккаунт для диагностики инжекта через potassium
 };
 local allowedUsers = {};
 do
@@ -382,7 +399,7 @@ end
 if not checkWhitelist() then
 	return;
 end
-local Config = {Enabled=true,MenuKey=Enum.KeyCode.P,PlayerListToggleKey=nil,SpecToggleKey=nil,SpecVisible=true,Accent=Color3.fromRGB(0, 160, 255),Trigger={Active=false,Mode="Player",TriggerMode="Mode 1",WallCheck=false,Delay=0,LastShot=0,TriggerKey=Enum.KeyCode.T,MaxRange=70},Targeting={Selected={}},Skybox={SelectedPreset="Default"},Utility={AutoReload=false,AutoReloadKeybind=nil,RapidFire={Enabled=false,ToggleKey=nil,Delay=0.02},AutoMacro={Key=nil},AimTrainer={Key=nil,DurationSec=1}},SilentAim={Enabled=true,Keybind=nil,TargetPart="Head",Mode="Rage",FOV=360,MaxRange=250,Visibility=true,ShowFOV=true,TargetSwitchDelay=0.1,Legit={FOV=5,TargetSwitchDelay=0.1,Jitter=25,MissEnabled=false,MissPercent=20},Backtrack={Enabled=false,DelayMs=120,ShowHitbox=true,HitboxColor=Color3.fromRGB(255, 255, 255)}},Autoshoot={Active=false,ShootDelayMs=200,ShotsPerTrigger=1,HoldKey=nil,HoldToShoot=false,LastTriggerTime=0,MultiHost=true},PlayerListVisible=true,Esp={Enabled=false,Boxes=true,Names=true,Health=true,BoxColor=Color3.fromRGB(255, 255, 255),NameColor=Color3.fromRGB(255, 255, 255),HpColor=Color3.fromRGB(255, 255, 255),Hitbox=false,HitboxColor=Color3.fromRGB(255, 255, 255)},TriggerAllMode=false};
+local Config = {Enabled=true,MenuKey=Enum.KeyCode.P,PlayerListToggleKey=nil,SpecToggleKey=nil,SpecVisible=true,MenuBlurEnabled=true,MenuBlurPercent=65,Accent=Color3.fromRGB(0, 160, 255),Trigger={Active=false,Mode="Player",TriggerMode="Mode 1",WallCheck=false,Delay=0,LastShot=0,TriggerKey=Enum.KeyCode.T,MaxRange=70,FovTriggerActive=false,WeaponSwap={Enabled=false,Weapons={["[Revolver]"]=true,["[Double-Barrel SG]"]=true,["[Shotgun]"]=true,["[TacticalShotgun]"]=true},RevolverShots=1}},Targeting={Selected={}},Skybox={SelectedPreset="Default"},Utility={AutoReload=false,AutoReloadKeybind=nil,RapidFire={Enabled=false,ToggleKey=nil,Delay=0.02},AutoMacro={Key=nil},AimTrainer={Key=nil,DurationSec=1}},SilentAim={Enabled=true,Keybind=nil,TargetPart="Head",Mode="Rage",FOV=360,MaxRange=250,Visibility=true,ShowFOV=true,TargetSwitchDelay=0.1,UnlimitedRange=false,UnlimitedRangeDistance=1000,Legit={FOV=5,TargetSwitchDelay=0.1,Jitter=25,MissEnabled=false,MissPercent=20},Backtrack={Enabled=false,DelayMs=120,ShowHitbox=true,HitboxColor=Color3.fromRGB(255, 255, 255)}},Autoshoot={Active=false,ShootDelayMs=200,ShotsPerTrigger=1,HoldKey=nil,HoldToShoot=false,LastTriggerTime=0,MultiHost=true},PlayerListVisible=true,Esp={Enabled=false,Boxes=true,Names=true,Health=true,OnlyTarget=true,BoxColor=Color3.fromRGB(255, 255, 255),NameColor=Color3.fromRGB(255, 255, 255),HpColor=Color3.fromRGB(255, 255, 255)},TriggerAllMode=false,Combat={HitboxExpander={Enabled=false,ShowHitbox=false,Color=Color3.fromRGB(37, 115, 184),PerWeapon={["[Revolver]"]={SizeX=0,SizeY=0,SizeZ=0},["[Double-Barrel SG]"]={SizeX=0,SizeY=0,SizeZ=0},["[Shotgun]"]={SizeX=0,SizeY=0,SizeZ=0},["[TacticalShotgun]"]={SizeX=0,SizeY=0,SizeZ=0}}}},PanicMode={Enabled=true},TitleShimmerSpeed=3.8};
 local MODE_OFF = 0;
 local MODE_AUTOSHOOT = 1;
 local MODE_TRIGGER = 2;
@@ -479,6 +496,27 @@ local function HasAmmo()
 	end
 	return true;
 end
+-- Размер Hitbox Expander настраивается ПО ОРУЖИЮ (Config.Combat.HitboxExpander.
+-- PerWeapon[имя тула]), не одним глобальным значением сразу на всё. Текущее
+-- оружие берём у LocalPlayer.Character. Объявлена здесь, в самом верху
+-- top-level скоупа (до do-блока на 331 и до setupSilentHook/getAim/shoot
+-- хуков дальше по файлу) специально, чтобы быть upvalue'ом для ВСЕХ мест,
+-- где используется размер хитбокса (shoot-хук внутри setupSilentHook,
+-- getHitboxScreenBounds в Trigger Mode 3, визуальный wireframe) - те сидят
+-- в разных, не связанных друг с другом вложенных замыканиях, и только
+-- объявление на самом верху файла гарантированно видно из них всех без
+-- SAEnv-моста. 0/не задано у конкретного оружия - откат на 8x8x4 (то же
+-- поведение, что было раньше с одним общим значением на всех).
+local function getHitboxExpanderSize()
+	local hbCfg = Config.Combat.HitboxExpander;
+	local char = LocalPlayer.Character;
+	local tool = char and char:FindFirstChildOfClass("Tool");
+	local per = tool and hbCfg.PerWeapon and hbCfg.PerWeapon[tool.Name];
+	local sx = (per and per.SizeX and per.SizeX > 0) and per.SizeX or 8;
+	local sy = (per and per.SizeY and per.SizeY > 0) and per.SizeY or 8;
+	local sz = (per and per.SizeZ and per.SizeZ > 0) and per.SizeZ or 4;
+	return sx, sy, sz;
+end
 local function AutoReload()
 	local character = LocalPlayer.Character;
 	if not character then
@@ -573,7 +611,6 @@ local function saHasLOS(part)
 end
 local rageLockedPlayer = nil;
 local rageLockClock = 0;
-local rageNextAcquireAt = 0;
 -- ===== Backtrack: история позиций хитбоксов (стрельба по прошлой позиции) =====
 local BT_MAX_MS = 600;
 local BT_HISTORY = setmetatable({}, { __mode = "k" });
@@ -700,11 +737,38 @@ local function btRayIntersectsBox(origin, dir, maxDist, cf, hx, hy, hz)
 	return t;
 end
 SAEnv.emolineBtRayIntersectsBox = btRayIntersectsBox;
+-- Проверка стены для бектрек-попадания: геометрическое пересечение луча с откатным
+-- боксом НЕ значит, что между стрелком и этой старой позицией нет стены. Раньше
+-- btGhostTraceHit принимал любое геометрическое пересечение без проверки occlusion,
+-- поэтому можно было "убить" игрока, который давно убежал за стену - реальный выстрел
+-- проходил сквозь стену до его УЖЕ неактуальной откатной позиции. Стены статичны,
+-- поэтому проверка текущей геометрии от origin до исторической точки попадания -
+-- корректная аппроксимация того, была ли стена и в момент этой исторической позиции.
+local function btHasLOS(origin, targetPos)
+	local char = LocalPlayer.Character;
+	local toTarget = targetPos - origin;
+	local dist = toTarget.Magnitude;
+	if dist < 1e-3 then return true; end
+	local params = RaycastParams.new();
+	params.FilterType = Enum.RaycastFilterType.Exclude;
+	local ignored = workspace:FindFirstChild("Ignored");
+	local ignoreList = {};
+	if char then table.insert(ignoreList, char); end
+	if ignored then table.insert(ignoreList, ignored); end
+	params.FilterDescendantsInstances = ignoreList;
+	params.IgnoreWater = true;
+	local hit = workspace:Raycast(origin, toTarget, params);
+	if not hit then return true; end
+	local model = hit.Instance:FindFirstAncestorWhichIsA("Model");
+	if model and model:FindFirstChildOfClass("Humanoid") then return true; end
+	return false;
+end
 -- Ghost trace по набору частей: возвращает (hitPart, t), если ЛУЧ пересекает хотя
--- бы один откатный бокс 8x8x4 (OBB по CFrame части) цели. Луч берётся по НАПРАВЛЕНИЮ
--- выстрела (dir), maxDist = полная дальность оружия, а не длина до AimPosition —
--- так луч «добивает» до откатной позиции у всех оружий, а не только там, где
--- стрелок целится вплотную. origin с fallback для оружий без Handle/ForcedOrigin.
+-- бы один откатный бокс 8x8x4 (OBB по CFrame части) цели И путь до этой точки не
+-- перекрыт стеной. Луч берётся по НАПРАВЛЕНИЮ выстрела (dir), maxDist = полная
+-- дальность оружия, а не длина до AimPosition — так луч «добивает» до откатной
+-- позиции у всех оружий, а не только там, где стрелок целится вплотную. origin с
+-- fallback для оружий без Handle/ForcedOrigin.
 local function btGhostTraceHit(origin, dir, maxDist)
 	if not (Backtrack and Backtrack.Enabled) then return nil, nil; end
 	local btGetPos = SAEnv.emolineBtGetPosition;
@@ -724,8 +788,11 @@ local function btGhostTraceHit(origin, dir, maxDist)
 						local cf = hrp.CFrame - hrp.CFrame.Position + pos;
 						local t = btRayIntersectsBox(origin, dir, maxDist, cf, 4, 4, 2);
 						if t and t < bestT then
-							bestT = t;
-							bestPart = c:FindFirstChild("Head") or hrp;
+							local hitPoint = origin + dir * t;
+							if btHasLOS(origin, hitPoint) then
+								bestT = t;
+								bestPart = c:FindFirstChild("Head") or hrp;
+							end
 						end
 					end
 				end
@@ -763,9 +830,21 @@ local function saGetTarget(range, useRangeAsMax)
 	local camDir = saAimDir();
 	local fovMax = math.clamp(SilentAim.FOV or 360, 0, 360);
 	local fovRad = math.rad(fovMax);
-	local maxRange = useRangeAsMax
-		and (range or SilentAim.MaxRange or 250)
-		or math.min(range or math.huge, SilentAim.MaxRange or 250);
+	-- Unlimited Range: игнорирует и дальность оружия (range, переданную
+	-- игрой в getAim/shoot), и обычный SilentAim.MaxRange целиком - триггер
+	-- по-прежнему решает КОГДА стрелять по своей собственной дистанции
+	-- (Config.Trigger.MaxRange, не трогается здесь), но РЕДИРЕКТ урона при
+	-- включённой фиче ищет цель в радиусе UnlimitedRangeDistance от камеры,
+	-- а не ужимается под реальный radius оружия - этим и достигается "регает
+	-- на любой дистанции, даже если не достаю".
+	local maxRange;
+	if SilentAim.UnlimitedRange then
+		maxRange = tonumber(SilentAim.UnlimitedRangeDistance) or 1000;
+	else
+		maxRange = useRangeAsMax
+			and (range or SilentAim.MaxRange or 250)
+			or math.min(range or math.huge, SilentAim.MaxRange or 250);
+	end
 	local now = os.clock();
 	local delay = math.clamp(tonumber(SilentAim.TargetSwitchDelay) or 0, 0, 3);
 	-- Поиск лучшей цели по углу
@@ -786,7 +865,7 @@ local function saGetTarget(range, useRangeAsMax)
 						if dist <= maxRange then
 							local angle = math.acos(math.clamp(camDir:Dot((pos - camPos).Unit), -1, 1));
 							if fovRad >= math.pi or angle <= fovRad / 2 then
-								if (not SilentAim.Visibility) or saHasLOS(part) then
+								if saHasLOS(part) then
 									if angle < bestScore then
 										bestScore = angle;
 										bestPart = part;
@@ -801,9 +880,19 @@ local function saGetTarget(range, useRangeAsMax)
 			end
 		end
 	end
-	-- Target switch delay: держим залоченную цель пока delay не истёк
+	-- Target switch delay: держим залоченную цель пока delay не истёк.
+	-- БЫЛО: после потери залоченной цели (смерть/K.O./вышла из Trigger-режима)
+	-- выставлялся "rageNextAcquireAt" и ВЕСЬ следующий delay-интервал функция
+	-- возвращала nil,nil для ЛЮБОЙ цели, даже валидной новой - хуки getAim/
+	-- shoot/packFire молчали, выстрел шёл натурально туда, куда смотрит камера
+	-- (ровно баг "силент иногда не срабатывает, пуля летит куда навёлся").
+	-- Смысл delay - не дёргаться между НЕСКОЛЬКИМИ одновременно видимыми целями,
+	-- а не блокировать прицеливание целиком после потери старой цели. Теперь:
+	-- пока залоченная цель жива и delay не истёк - держим её; как только она
+	-- умерла/невалидна или delay истёк - сразу же переключаемся на bestPlr без
+	-- мёртвой зоны.
 	if delay > 0 then
-		if rageLockedPlayer and rageLockedPlayer ~= bestPlr then
+		if rageLockedPlayer then
 			local lc = rageLockedPlayer.Character;
 			local lockedAlive = false;
 			if lc then
@@ -812,32 +901,35 @@ local function saGetTarget(range, useRangeAsMax)
 				local lko = lbe and lbe:FindFirstChild("K.O");
 				lockedAlive = lh and lh.Health > 0 and not (lko and lko.Value);
 			end
-if lockedAlive and (now - rageLockClock) < delay then
-			local lpart = saChoosePart(lc, camPos, camDir);
-			if lpart then
-				local lpos = lpart.Position;
-				if Backtrack.Enabled and (SilentAim.Mode ~= "Legit") then
-					local lhrp = lc:FindFirstChild("HumanoidRootPart");
-					if lhrp and lhrp:IsA("BasePart") then
-						local btOld = btGetPosition(lhrp, Backtrack.DelayMs);
-						if btOld then
-							lpos = lpos + (btOld - lhrp.Position);
+			if lockedAlive and (now - rageLockClock) < delay then
+				local lpart = saChoosePart(lc, camPos, camDir);
+				-- LOS ревалидируется на каждый кадр удержания лока (не только при
+				-- первом захвате) - рвём лок сразу, как цель скрылась за стеной
+				-- (ниже упадёт в rageLockedPlayer=nil и возьмёт свежего bestPlr по
+				-- обычному пути). Никакого обхода стен - WallbangLock убран.
+				if lpart and saHasLOS(lpart) then
+					local lpos = lpart.Position;
+					if Backtrack.Enabled and (SilentAim.Mode ~= "Legit") then
+						local lhrp = lc:FindFirstChild("HumanoidRootPart");
+						if lhrp and lhrp:IsA("BasePart") then
+							local btOld = btGetPosition(lhrp, Backtrack.DelayMs);
+							if btOld then
+								lpos = lpos + (btOld - lhrp.Position);
+							end
 						end
 					end
+					return lpart, lpos;
 				end
-				return lpart, lpos;
-			end
-			end
-			if not lockedAlive then
+				-- нет части или LOS пропала - лок рвём, ниже это упадёт в обычный
+				-- путь свежего захвата по bestPlr.
 				rageLockedPlayer = nil;
 				rageLockClock = 0;
-				rageNextAcquireAt = now + delay;
+			else
+				rageLockedPlayer = nil;
+				rageLockClock = 0;
 			end
 		end
-		if now < rageNextAcquireAt then
-			return nil, nil;
-		end
-		if bestPlr and bestPlr ~= rageLockedPlayer then
+		if bestPlr then
 			rageLockedPlayer = bestPlr;
 			rageLockClock = now;
 		end
@@ -1113,9 +1205,15 @@ local function legitBuildAim(plr, origin, range, relaxed)
 	local scorePos = aimPart.Position;
 	if rayOrigin and rayDir then scorePos = legitClosestOnRay(aimPart, rayOrigin, rayDir) or scorePos; end
 	if (scorePos - origin).Magnitude > maxDist then return nil, nil; end
+	-- Wall-check ОБЯЗАТЕЛЕН всегда, даже в relaxed/grace-режиме (TargetSwitchDelay
+	-- держит локнутую цель пока она на секунду вне FOV). Раньше relaxed полностью
+	-- пропускал legitIsVisible, и если цель убегала за стену в этот grace-период,
+	-- прицел продолжал тянуться к ней сквозь стену - relaxed должен прощать только
+	-- потерю FOV/курсора, а не потерю line-of-sight.
+	if not legitIsVisible(origin, scorePos, plr) then return nil, nil; end
 	if not relaxed then
 		local _, inFov = legitScreenFovDist(scorePos, crosshair, fovPx);
-		if not inFov or not legitIsVisible(origin, scorePos, plr) then return nil, nil; end
+		if not inFov then return nil, nil; end
 	end
 	local aimPos = scorePos;
 	if rayOrigin and rayDir then aimPos = legitClosestOnRay(aimPart, rayOrigin, rayDir) or aimPos; end
@@ -1349,7 +1447,18 @@ local function setupSilentHook()
 					local delta = aimPos - origin;
 					local len = delta.Magnitude;
 					if len > 0.5 then
-						return delta / len, len;
+						-- Вторым значением раньше отдавали ТОЧНУЮ дистанцию до цели
+						-- (len), а не натуральную дальность оружия (range), которую
+						-- игра сама передала нам в аргументе. Подозрение: dробовик/
+						-- double-barrel у некоторых игр считает число пеллетов или
+						-- угол разброса ОТ этой дистанции (чем ближе "выстрел" -
+						-- тем компактнее паттерн) - а наш редирект почти всегда
+						-- целится в упор (близкая len), что и давало "бьёт как
+						-- револьвер, без разброса" у дробовиков конкретно. Отдаём
+						-- оружию его же реальный range вместо вычисленной len -
+						-- направление всё равно идёт точно в цель, длина теперь
+						-- натуральная, не привязанная к факту силент-редиректа.
+						return delta / len, range or len;
 					end
 				end
 			end
@@ -1363,6 +1472,64 @@ local function setupSilentHook()
 			GunModule.shoot = function(p1)
 				local a, h, n, col = realShoot(p1);
 				if p1 and p1.Shooter == LocalPlayer.Character then
+					-- Hitbox Expander: отдельный toggle (Config.Combat.HitboxExpander.
+					-- Enabled), не завязан ни на Backtrack, ни на Silent Aim/Trigger
+					-- Mode - работает всегда, если включён. Берём РЕАЛЬНЫЙ результат
+					-- выстрела (a,h уже получены выше из realShoot) и, если он мимо
+					-- (h не указывает на живого врага), проверяем прошла ли трасса
+					-- origin->a через расширенный бокс вокруг чьего-то НАСТОЯЩЕГО
+					-- (нетронутого) HumanoidRootPart. Если да - подменяем только
+					-- возвращаемый hit-инстанс. Их HRP.Size/CanCollide/дети никогда
+					-- не читаются для записи и не мутируются - сравнение идёт с
+					-- локальной фантомной коробкой (btRayIntersectsBox), которую
+					-- видим только мы. Ничего не реплицируется цели или серверу
+					-- сверх того, что обычный выстрел и так бы отправил.
+					if Config.Combat.HitboxExpander.Enabled then
+						local realHitModel = h and h:FindFirstAncestorWhichIsA("Model");
+						local realHitValid = realHitModel and (realHitModel ~= LocalPlayer.Character)
+							and realHitModel:FindFirstChildOfClass("Humanoid");
+						if not realHitValid then
+							local origin = p1.ForcedOrigin or (p1.Handle and p1.Handle.Position)
+								or (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+									and LocalPlayer.Character.HumanoidRootPart.Position);
+							if typeof(origin) == "Vector3" and typeof(a) == "Vector3" then
+								local dirVec = a - origin;
+								local len = dirVec.Magnitude;
+								if len > 0.5 then
+									local dir = dirVec.Unit;
+									local maxDist = math.max(len, p1.Range or SilentAim.MaxRange or 250);
+									local hbSizeX, hbSizeY, hbSizeZ = getHitboxExpanderSize();
+									local hbX, hbY, hbZ = hbSizeX / 2, hbSizeY / 2, hbSizeZ / 2;
+									local bestT, bestPart = math.huge, nil;
+									for _, enemy in ipairs(Players:GetPlayers()) do
+										if (enemy ~= LocalPlayer) and (GetPlayerMode(enemy.Name) == MODE_TRIGGER)
+											and isAlive(enemy) and (not isKnockedOut(enemy)) then
+											local echar = enemy.Character;
+											local ehrp = echar and echar:FindFirstChild("HumanoidRootPart");
+											if ehrp and ehrp:IsA("BasePart") then
+												local t = btRayIntersectsBox(origin, dir, maxDist, ehrp.CFrame, hbX, hbY, hbZ);
+												if t and (t < bestT) then
+													bestT = t;
+													bestPart = echar:FindFirstChild("Head") or ehrp;
+												end
+											end
+										end
+									end
+									if bestPart then
+										local hitPos = origin + dir * math.max(bestT, 0);
+										-- btRayIntersectsBox чисто геометрический тест, он не знает
+										-- что между origin и hitPos может быть стена (та же причина,
+										-- по которой btGhostTraceHit ниже всегда дополнительно зовёт
+										-- btHasLOS) - без этой проверки это был готовый вектор
+										-- простреливать стены через Hitbox Expander.
+										if btHasLOS(origin, hitPos) then
+											return hitPos, bestPart, n, col;
+										end
+									end
+								end
+							end
+						end
+					end
 					-- Ghost trace (легитный бектрек): пересечение НАСТОЯЩЕГО
 					-- луча оружия с откатным боксом цели (OBB по CFrame частей).
 					-- Пуля летит натурально; урон засчитывается ТОЛЬКО если реальная
@@ -1429,6 +1596,16 @@ local function setupSilentHook()
 							local hitPos = aimPos + Vector3.new(offX, offY, offZ);
 							return hitPos, target, n, col;
 						end
+					elseif SilentAim.Enabled and (SilentAim.Mode == "Legit") then
+						-- Legit ничего не редиректит тут (хит идёт от направления,
+						-- которое getAim уже навёл через saMissPeek), но pendingSkip
+						-- нужно СБРОСИТЬ именно здесь, на реальном выстреле. saMissPeek
+						-- кэширует решение "мажем/не мажем" при первом вызове и больше
+						-- не перебрасывает его, пока saMissConsume не обнулит pendingSkip -
+						-- а consume раньше звался только для non-Legit веток, поэтому
+						-- Legit-мисс решение замораживалось на первом же выстреле навсегда
+						-- (0% или 100% по факту первого random-ролла, а не реальный %).
+						saMissConsume();
 					end
 				end
 				return a, h, n, col;
@@ -1767,6 +1944,8 @@ local theme = {
 	dangerWarm = Color3.fromRGB(255, 95, 95),
 	stroke = Color3.fromRGB(65, 65, 65),
 	strokeSoft = Color3.fromRGB(48, 48, 48),
+	glassStroke = Color3.fromRGB(255, 255, 255),
+	glassSheen = Color3.fromRGB(255, 255, 255),
 };
 local function applyCorner(inst, radius)
 	local c = Instance.new("UICorner");
@@ -1779,6 +1958,7 @@ local function applyStroke(inst, color, thickness, transparency)
 	s.Thickness = thickness;
 	s.Transparency = transparency;
 	s.Parent = inst;
+	return s;
 end
 local function makeGradient(fromColor, toColor, rotation)
 	local g = Instance.new("UIGradient");
@@ -1826,22 +2006,77 @@ local function addPressAnimation(inst)
 	inst.MouseLeave:Connect(release);
 end
 
+-- Glass-эффект: реальный фон-блюр (BlurEffect в Lighting) + высокая прозрачность
+-- панелей поверх него + белая stroke-обводка почти на пределе прозрачности (0.82-0.9)
+-- как блик по кромке стекла. Blur качается от 0 до текущей интенсивности (Settings:
+-- Menu Blur / Blur Intensity, Config.MenuBlurEnabled/MenuBlurPercent) только пока
+-- меню видимо (Main.Visible), чтобы не мылить картинку когда хаб закрыт.
+local MENU_BLUR_MAX_SIZE = 40;
+local MenuBlur = Lighting:FindFirstChild("emolineMenuBlur");
+if not MenuBlur then
+	MenuBlur = Instance.new("BlurEffect");
+	MenuBlur.Name = "emolineMenuBlur";
+	MenuBlur.Size = 0;
+	MenuBlur.Parent = Lighting;
+end
+local function currentMenuBlurSize()
+	if not Config.MenuBlurEnabled then
+		return 0;
+	end
+	local pct = math.clamp(tonumber(Config.MenuBlurPercent) or 0, 0, 100);
+	return (pct / 100) * MENU_BLUR_MAX_SIZE;
+end
+local applyMenuBlurState;
+
 local Main = Instance.new("Frame");
 Main.Name = "Main";
 Main.Size = UDim2.fromOffset(920, 560);
 Main.Position = UDim2.new(0.5, -460, 0.5, -280);
 Main.BackgroundColor3 = theme.bg;
+Main.BackgroundTransparency = 0.22;
 Main.BorderSizePixel = 0;
 Main.Parent = ScreenGui;
 applyCorner(Main, 12);
-applyStroke(Main, theme.strokeSoft, 1, 0.45);
+applyStroke(Main, theme.glassStroke, 1, 0.82);
 local mainGradient = Instance.new("UIGradient");
 mainGradient.Color = ColorSequence.new({
 	ColorSequenceKeypoint.new(0, theme.surface),
 	ColorSequenceKeypoint.new(1, theme.bg),
 });
+mainGradient.Transparency = NumberSequence.new({
+	NumberSequenceKeypoint.new(0, 0),
+	NumberSequenceKeypoint.new(0.5, 0.12),
+	NumberSequenceKeypoint.new(1, 0),
+});
 mainGradient.Rotation = 90;
 mainGradient.Parent = Main;
+local mainSheen = Instance.new("Frame");
+mainSheen.Name = "GlassSheen";
+mainSheen.BackgroundColor3 = theme.glassSheen;
+mainSheen.BorderSizePixel = 0;
+mainSheen.Size = UDim2.new(1, 0, 0.45, 0);
+mainSheen.ZIndex = 1;
+mainSheen.Parent = Main;
+applyCorner(mainSheen, 12);
+local mainSheenGradient = Instance.new("UIGradient");
+mainSheenGradient.Rotation = 90;
+mainSheenGradient.Transparency = NumberSequence.new({
+	NumberSequenceKeypoint.new(0, 0.9),
+	NumberSequenceKeypoint.new(1, 1),
+});
+mainSheenGradient.Parent = mainSheen;
+applyMenuBlurState = function(instant)
+	local target = Main.Visible and currentMenuBlurSize() or 0;
+	if instant then
+		MenuBlur.Size = target;
+	else
+		tween(MenuBlur, 0.25, { Size = target });
+	end
+end
+connectLive(Main:GetPropertyChangedSignal("Visible"), function()
+	applyMenuBlurState(false);
+end);
+applyMenuBlurState(true);
 
 local Header = Instance.new("Frame");
 Header.Name = "Header";
@@ -1850,7 +2085,7 @@ Header.BackgroundTransparency = 1;
 Header.Parent = Main;
 local headerBackdrop = Instance.new("Frame");
 headerBackdrop.BackgroundColor3 = theme.surface;
-headerBackdrop.BackgroundTransparency = 0.1;
+headerBackdrop.BackgroundTransparency = 0.4;
 headerBackdrop.Size = UDim2.new(1, 0, 1, 0);
 headerBackdrop.ZIndex = 1;
 headerBackdrop.BorderSizePixel = 0;
@@ -1872,7 +2107,7 @@ TitleLabel.Font = Enum.Font.GothamBold;
 TitleLabel.TextColor3 = theme.text;
 TitleLabel.TextSize = 20;
 TitleLabel.TextXAlignment = Enum.TextXAlignment.Left;
-TitleLabel.Text = "emoline hub";
+TitleLabel.Text = "/crimewave";
 TitleLabel.ZIndex = 2;
 TitleLabel.Parent = Header;
 local SubtitleLabel = Instance.new("TextLabel");
@@ -1883,9 +2118,78 @@ SubtitleLabel.Font = Enum.Font.Gotham;
 SubtitleLabel.TextColor3 = theme.textDim;
 SubtitleLabel.TextSize = 11;
 SubtitleLabel.TextXAlignment = Enum.TextXAlignment.Left;
-SubtitleLabel.Text = "emoline";
+SubtitleLabel.Text = "by divineaura";
 SubtitleLabel.ZIndex = 2;
 SubtitleLabel.Parent = Header;
+
+-- UIGradient on a TextLabel tints the TEXT (no background to speak of,
+-- BackgroundTransparency = 1) - no remote fired, no Character/instance
+-- touched, nothing printed to console, so neither AC#1 (LogService) nor
+-- AC#2 (Character/HRP sweep + report remotes) has any surface to catch
+-- this on.
+-- BЫЛО: TweenService анимировал Offset.X от -1 до 1 и прыгал обратно -
+-- UIGradient.Offset НЕ зацикливает/не тайлит ColorSequence, значения вне
+-- видимого окна просто клэмпятся к цвету крайней точки, так что полоса
+-- физически не может пройти "по кругу" этим способом - на обоих концах
+-- диапазона она гарантированно уходит в паузу (чистый белый, без движения)
+-- перед тем как войти заново. "Постоянно, словно по кругу" значит
+-- пересчитывать сам ColorSequence каждый кадр по кольцевой фазе (0..1 по
+-- модулю) - тогда шва вообще нет, цвет просто непрерывно бежит по тексту
+-- в одну сторону вечно. Скорость (сек на полный круг) настраивается из
+-- Settings > Appearance, единый источник - Config.TitleShimmerSpeed.
+local titleGradient = Instance.new("UIGradient");
+titleGradient.Rotation = 0;
+titleGradient.Parent = TitleLabel;
+
+-- "Змейка": 3 блика по кругу вместо одного - на равном расстоянии друг от
+-- друга (120° по фазе), каждый бежит по той же окружности, так что они
+-- гонятся друг за другом непрерывной цепочкой, а не одна точка по кругу.
+-- "Тусклая" была из-за двух вещей разом: (1) квадратичный спад (intensity^2)
+-- тянет ВСЮ середину блика вниз, а не только края - большая часть ширины
+-- блика проводит время на низкой яркости; (2) Lerp шёл к theme.accent,
+-- а не к accentWarm - тому самому яркому тону, которым красятся акцентные
+-- градиенты по всему меню (underline на табах и т.п.). Степень 0.5 (корень)
+-- вместо квадрата держит середину блика НАСЫЩЕННОЙ дольше и схлопывается
+-- только у самого края - читается как настоящий яркий блик, а не дымка.
+local TITLE_SHIMMER_SAMPLES = 19; -- ColorSequence.new() hard-caps at 20 keypoints (empirically confirmed live: n=20 ok, n=21 errors) - this is samples+1 = 20, right at the limit
+local TITLE_SHIMMER_BANDS = 3;
+local TITLE_SHIMMER_HALF_WIDTH = 0.11; -- узкие блики с зазором между ними - иначе 3 штуки сольются в одно сплошное кольцо
+local titleShimmerPhase = 0;
+local function buildTitleShimmerColor(phase)
+	local keypoints = {};
+	for i = 0, TITLE_SHIMMER_SAMPLES do
+		local t = i / TITLE_SHIMMER_SAMPLES;
+		local bestIntensity = 0;
+		for band = 0, TITLE_SHIMMER_BANDS - 1 do
+			local center = (phase + band / TITLE_SHIMMER_BANDS) % 1;
+			local dist = math.abs(t - center);
+			dist = math.min(dist, 1 - dist); -- shortest distance around the 0..1 circle
+			if dist < TITLE_SHIMMER_HALF_WIDTH then
+				local normalized = dist / TITLE_SHIMMER_HALF_WIDTH; -- 0 at center .. 1 at the band's edge
+				local intensity;
+				if normalized <= 0.35 then
+					-- solid core: full accentWarm held across the inner 35% of the
+					-- band's radius, not just a single-point peak that a sqrt curve
+					-- falls away from immediately - this is the actual "dull" fix,
+					-- the earlier version spent almost no time at full saturation.
+					intensity = 1;
+				else
+					local taper = (normalized - 0.35) / 0.65;
+					intensity = (1 - taper) ^ 0.5;
+				end
+				if intensity > bestIntensity then
+					bestIntensity = intensity;
+				end
+			end
+		end
+		table.insert(keypoints, ColorSequenceKeypoint.new(t, theme.text:Lerp(theme.accentWarm, bestIntensity)));
+	end
+	return ColorSequence.new(keypoints);
+end
+connectLive(RunService.Heartbeat, function(dt)
+	titleShimmerPhase = (titleShimmerPhase + dt / math.max(Config.TitleShimmerSpeed, 0.1)) % 1;
+	titleGradient.Color = buildTitleShimmerColor(titleShimmerPhase);
+end);
 local CloseBtn = Instance.new("TextButton");
 CloseBtn.Name = "Close";
 CloseBtn.AnchorPoint = Vector2.new(1, 0.5);
@@ -1956,13 +2260,13 @@ end);
 local TabBar = Instance.new("Frame");
 TabBar.Name = "TabBar";
 TabBar.BackgroundColor3 = theme.surface;
-TabBar.BackgroundTransparency = 0.15;
+TabBar.BackgroundTransparency = 0.45;
 TabBar.Position = UDim2.fromOffset(12, 68);
 TabBar.Size = UDim2.new(0, 64, 1, -80);
 TabBar.BorderSizePixel = 0;
 TabBar.Parent = Main;
 applyCorner(TabBar, 12);
-applyStroke(TabBar, theme.strokeSoft, 1, 0.6);
+applyStroke(TabBar, theme.glassStroke, 1, 0.85);
 local TabBarPad = Instance.new("UIPadding");
 TabBarPad.PaddingTop = UDim.new(0, 10);
 TabBarPad.PaddingBottom = UDim.new(0, 10);
@@ -1985,13 +2289,13 @@ Body.Parent = Main;
 local Content = Instance.new("Frame");
 Content.Name = "Content";
 Content.BackgroundColor3 = theme.surface;
-Content.BackgroundTransparency = 0.2;
+Content.BackgroundTransparency = 0.45;
 Content.Position = UDim2.fromOffset(12, 0);
 Content.Size = UDim2.new(1, -24, 1, -10);
 Content.BorderSizePixel = 0;
 Content.Parent = Body;
 applyCorner(Content, 12);
-applyStroke(Content, theme.strokeSoft, 1, 0.65);
+applyStroke(Content, theme.glassStroke, 1, 0.88);
 local PagesRoot = Instance.new("Frame");
 PagesRoot.Name = "Pages";
 PagesRoot.BackgroundTransparency = 1;
@@ -2053,13 +2357,16 @@ local function createSection(page, heading, column)
 	end
 	local section = Instance.new("Frame");
 	section.BackgroundColor3 = theme.surfaceSoft;
-	section.BackgroundTransparency = 0.25;
+	section.BackgroundTransparency = 0.5;
 	section.Size = UDim2.new(1, 0, 0, 0);
 	section.AutomaticSize = Enum.AutomaticSize.Y;
 	section.BorderSizePixel = 0;
 	section.Parent = targetColumn;
 	applyCorner(section, 8);
-	applyStroke(section, theme.strokeSoft, 1, 0.5);
+	-- Толщина 1 + прозрачность 0.88 раньше давали почти невидимую линию,
+	-- которая на размытом фоне (Menu Blur) рендерилась неровно/ступеньками -
+	-- общая функция для ВСЕХ секций меню, фикс тут чинит границы везде разом.
+	applyStroke(section, theme.glassStroke, 1.25, 0.7);
 	local pad = Instance.new("UIPadding");
 	pad.PaddingTop = UDim.new(0, 10);
 	pad.PaddingLeft = UDim.new(0, 12);
@@ -2372,16 +2679,38 @@ local function createSlider(parent, caption, minValue, maxValue, value, onChange
 	label.TextXAlignment = Enum.TextXAlignment.Left;
 	label.Text = caption;
 	label.Parent = row;
-	local valueLabel = Instance.new("TextLabel");
+	-- TextBox, not TextLabel: кликабельное поле, можно вписать число руками
+	-- вместо таскания ползунка. TextXAlignment всегда Center и не переключается
+	-- рантайм - это discrete enum, его нельзя твинить, любое изменение на лету
+	-- дёргает текст за 1 кадр. В покое - узкая прозрачная область впритык к
+	-- цифрам у края строки (выглядит как "у края", хотя формально центр).
+	-- На Focused плавно твинятся Size/Position/BackgroundTransparency/TextColor3
+	-- в маленькую серую таблетку несколько левее; на FocusLost - обратно.
+	-- Без обводки - чистый залитый фон.
+	local valueLabel = Instance.new("TextBox");
+	valueLabel.BackgroundColor3 = theme.surface;
 	valueLabel.BackgroundTransparency = 1;
 	valueLabel.AnchorPoint = Vector2.new(1, 0);
 	valueLabel.Position = UDim2.new(1, -12, 0, 6);
-	valueLabel.Size = UDim2.fromOffset(72, 18);
+	valueLabel.Size = UDim2.fromOffset(40, 18);
 	valueLabel.Font = Enum.Font.Code;
 	valueLabel.TextColor3 = theme.textDim;
 	valueLabel.TextSize = 11;
-	valueLabel.TextXAlignment = Enum.TextXAlignment.Right;
+	valueLabel.TextXAlignment = Enum.TextXAlignment.Center;
+	valueLabel.ClearTextOnFocus = false;
+	valueLabel.BorderSizePixel = 0;
 	valueLabel.Parent = row;
+	applyCorner(valueLabel, 6);
+	local valueLabelRestPos = valueLabel.Position;
+	local valueLabelRestSize = valueLabel.Size;
+	local valueLabelFocusPos = UDim2.new(1, -20, 0, 6);
+	local valueLabelFocusSize = UDim2.fromOffset(38, 20);
+	valueLabel.Focused:Connect(function()
+		TweenService:Create(valueLabel, TweenInfo.new(0.2, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), { Position = valueLabelFocusPos, Size = valueLabelFocusSize, BackgroundTransparency = 0.15, TextColor3 = theme.text }):Play();
+	end);
+	valueLabel.FocusLost:Connect(function()
+		TweenService:Create(valueLabel, TweenInfo.new(0.2, Enum.EasingStyle.Sine, Enum.EasingDirection.Out), { Position = valueLabelRestPos, Size = valueLabelRestSize, BackgroundTransparency = 1, TextColor3 = theme.textDim }):Play();
+	end);
 	local track = Instance.new("TextButton");
 	track.AutoButtonColor = false;
 	track.Text = "";
@@ -2442,7 +2771,12 @@ local function createSlider(parent, caption, minValue, maxValue, value, onChange
 			TweenService:Create(fill, TweenInfo.new(0.12), { Size = targetSize }):Play();
 			TweenService:Create(thumb, TweenInfo.new(0.12), { Position = targetPos }):Play();
 		end
-		if (decimals > 0) then
+		-- Не затираем то, что пользователь сейчас печатает в поле - render()
+		-- вызывается и при обычном драге ползунка, и этот же путь иначе
+		-- перезаписывал бы недопечатанный ввод на каждый кадр/внешний апдейт.
+		if valueLabel:IsFocused() then
+			-- skip
+		elseif (decimals > 0) then
 			valueLabel.Text = string.format("%." .. decimals .. "f", val);
 		else
 			valueLabel.Text = tostring(math.floor(val + 0.5));
@@ -2479,6 +2813,21 @@ local function createSlider(parent, caption, minValue, maxValue, value, onChange
 	end);
 	track:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
 		if (track.AbsoluteSize.X > 0) then
+			render(true);
+		end
+	end);
+	-- Ручной ввод: FocusLost файрится и по Enter, и по клику мимо поля
+	-- (enterPressed=false в последнем случае) - в обоих коммитим то, что
+	-- успели напечатать. Невалидный/пустой текст просто откатывает
+	-- отображение к текущему value через render(true), без onChange.
+	valueLabel.FocusLost:Connect(function()
+		local typed = tonumber(valueLabel.Text);
+		if typed then
+			local nv = roundStep(typed);
+			value = nv;
+			render(true);
+			onChange(nv);
+		else
 			render(true);
 		end
 	end);
@@ -2527,7 +2876,7 @@ local function createColorRow(parent, caption, getColor, setColor, cfgKey, reset
 
 	local wrap = Instance.new("Frame");
 	wrap.BackgroundColor3 = theme.surfaceElevated;
-	wrap.BackgroundTransparency = 0.3;
+	wrap.BackgroundTransparency = 0.5;
 	wrap.Size = UDim2.new(1, 0, 0, 38);
 	wrap.AutomaticSize = Enum.AutomaticSize.Y;
 	wrap.BorderSizePixel = 0;
@@ -2875,7 +3224,7 @@ local function createDropdown(parent, caption, options, default, onChange, cfgKe
 	row.AutoButtonColor = false;
 	row.Size = UDim2.new(1, 0, 0, 34);
 	row.BackgroundColor3 = theme.surfaceElevated;
-	row.BackgroundTransparency = 0.15;
+	row.BackgroundTransparency = 0.5;
 	row.BorderSizePixel = 0;
 	row.Text = "";
 	row.Parent = parent;
@@ -3072,6 +3421,7 @@ local function newKeybindOption(defaultKey, defaultMode, storeModeInValue)
 	return opt;
 end
 
+destroyGuiByName("KeybindsGUI");
 local KeybindsGui = Instance.new("ScreenGui");
 KeybindsGui.Name = "KeybindsGUI";
 KeybindsGui.ResetOnSpawn = false;
@@ -3089,13 +3439,14 @@ KeybindsFrame.Name = "KeybindsFrame";
 KeybindsFrame.Size = UDim2.new(0, 210, 0, 60);
 KeybindsFrame.Position = UDim2.new(0, 20, 0, 88);
 KeybindsFrame.BackgroundColor3 = theme.surface;
+KeybindsFrame.BackgroundTransparency = 0.22;
 KeybindsFrame.BorderSizePixel = 0;
 KeybindsFrame.Parent = KeybindsGui;
 applyCorner(KeybindsFrame, 12);
 local KeybindsStroke = Instance.new("UIStroke");
-KeybindsStroke.Color = theme.strokeSoft;
+KeybindsStroke.Color = theme.glassStroke;
 KeybindsStroke.Thickness = 1;
-KeybindsStroke.Transparency = 0.5;
+KeybindsStroke.Transparency = 0.88;
 KeybindsStroke.Parent = KeybindsFrame;
 
 local KeybindsHeader = Instance.new("Frame");
@@ -3264,12 +3615,41 @@ local function createKeybindRow(parent, caption, optionObj)
 	modeMenu.Visible = false;
 	modeMenu.Size = UDim2.fromOffset(132, MODE_H);
 	modeMenu.BackgroundColor3 = theme.surfaceElevated;
-	modeMenu.BackgroundTransparency = 0.1;
+	modeMenu.BackgroundTransparency = 0.35;
 	modeMenu.BorderSizePixel = 0;
 	modeMenu.ZIndex = 999;
 	modeMenu.Parent = Main;
 	applyCorner(modeMenu, 10);
-	applyStroke(modeMenu, theme.strokeSoft, 1, 0.6);
+	applyStroke(modeMenu, theme.glassStroke, 1, 0.82);
+	local modeMenuGradient = Instance.new("UIGradient");
+	modeMenuGradient.Rotation = 90;
+	modeMenuGradient.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, theme.surfaceElevated),
+		ColorSequenceKeypoint.new(1, theme.surface),
+	});
+	modeMenuGradient.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0),
+		NumberSequenceKeypoint.new(1, 0.25),
+	});
+	modeMenuGradient.Parent = modeMenu;
+	local modeMenuSheen = Instance.new("Frame");
+	modeMenuSheen.Name = "GlassSheen";
+	modeMenuSheen.BackgroundColor3 = theme.glassSheen;
+	modeMenuSheen.BorderSizePixel = 0;
+	modeMenuSheen.Size = UDim2.new(1, 0, 0, 20);
+	modeMenuSheen.ZIndex = 999;
+	modeMenuSheen.Parent = modeMenu;
+	applyCorner(modeMenuSheen, 10);
+	local modeMenuSheenGradient = Instance.new("UIGradient");
+	modeMenuSheenGradient.Rotation = 90;
+	modeMenuSheenGradient.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.82),
+		NumberSequenceKeypoint.new(1, 1),
+	});
+	modeMenuSheenGradient.Parent = modeMenuSheen;
+	local modeMenuScale = Instance.new("UIScale");
+	modeMenuScale.Scale = 0.85;
+	modeMenuScale.Parent = modeMenu;
 	local modeBaseTransparency = modeMenu.BackgroundTransparency;
 	local function positionModeMenu()
 		local p = picker.AbsolutePosition;
@@ -3287,13 +3667,17 @@ local function createKeybindRow(parent, caption, optionObj)
 		modeMenu.Visible = true;
 		positionModeMenu();
 		modeMenu.BackgroundTransparency = 1;
-		tween(modeMenu, 0.14, { BackgroundTransparency = modeBaseTransparency });
+		modeMenuScale.Scale = 0.85;
+		tween(modeMenu, 0.16, { BackgroundTransparency = modeBaseTransparency });
+		tween(modeMenuScale, 0.16, { Scale = 1 }, Enum.EasingStyle.Back, Enum.EasingDirection.Out);
 	end
 	local function hideModeMenu()
 		tween(modeMenu, 0.12, { BackgroundTransparency = 1 });
+		tween(modeMenuScale, 0.12, { Scale = 0.9 }, Enum.EasingStyle.Quad, Enum.EasingDirection.In);
 		task.delay(0.13, function()
 			modeMenu.Visible = false;
 			modeMenu.BackgroundTransparency = modeBaseTransparency;
+			modeMenuScale.Scale = 0.85;
 		end);
 	end
 	local modePad = Instance.new("UIPadding");
@@ -3317,7 +3701,7 @@ local function createKeybindRow(parent, caption, optionObj)
 		for modeName, modeButton in pairs(modeButtons) do
 			local active = (modeName == currentMode);
 			modeButton.BackgroundColor3 = active and theme.surfaceElevated or theme.surfaceSoft;
-			modeButton.BackgroundTransparency = active and 0 or 0.25;
+			modeButton.BackgroundTransparency = active and 0.1 or 0.55;
 			modeButton.TextColor3 = active and theme.text or theme.textDim;
 			modeGradients[modeName].Enabled = active;
 		end
@@ -3341,10 +3725,21 @@ local function createKeybindRow(parent, caption, optionObj)
 		modeButton.ZIndex = 1000;
 		modeButton.Parent = modeMenu;
 		applyCorner(modeButton, 6);
+		applyStroke(modeButton, theme.glassStroke, 1, 0.9);
 		local grad = makeGradient(theme.accentSoft, theme.accentWarm, 90);
 		grad.Enabled = false;
 		grad.Parent = modeButton;
 		addPressAnimation(modeButton);
+		modeButton.MouseEnter:Connect(function()
+			if (normalizeMode(optionObj.__mode) ~= modeName) then
+				tween(modeButton, 0.1, { BackgroundTransparency = 0.25 });
+			end
+		end);
+		modeButton.MouseLeave:Connect(function()
+			if (normalizeMode(optionObj.__mode) ~= modeName) then
+				tween(modeButton, 0.16, { BackgroundTransparency = 0.55 });
+			end
+		end);
 		modeButton.MouseButton1Click:Connect(function()
 			applyMode(modeName);
 		end);
@@ -3453,7 +3848,7 @@ local function createButton(parent, text, callback)
 	local btn = Instance.new("TextButton");
 	btn.AutoButtonColor = false;
 	btn.BackgroundColor3 = theme.surfaceElevated;
-	btn.BackgroundTransparency = 0.15;
+	btn.BackgroundTransparency = 0.5;
 	btn.Size = UDim2.new(1, 0, 0, 34);
 	btn.Font = Enum.Font.GothamMedium;
 	btn.TextColor3 = theme.text;
@@ -3719,7 +4114,18 @@ end
 local specGuiRef;
 local autoKeybind;
 local SettingsPage;
-do
+local silentAimToggleSetter;
+-- Настоящая IIFE (не просто do...end): в Luau каждая функция компилируется в
+-- свой Proto с ОТДЕЛЬНЫМ бюджетом в 200 локальных регистров. do...end — это
+-- просто лексический блок внутри ТОГО ЖЕ чанка, регистры не освобождает для
+-- независимого бюджета, только для повторного использования внутри одной и
+-- той же функции. Без разбивки на реальные функции этот файл (7000+ строк)
+-- не компилируется ("Out of local registers... exceeded limit 200"). Блок A
+-- и блок B ниже не пересекаются по top-level именам (проверено: единственные
+-- общие имена — specGuiRef/autoKeybind/SettingsPage, уже форвард-объявлены
+-- здесь как upvalue для обоих блоков) — поэтому хватает обычного замыкания,
+-- без stash-таблицы.
+(function()
 local CombatPage = createPage("Combat");
 local AimPage = createPage("Aim");
 local EspPage = createPage("Visuals");
@@ -3759,16 +4165,146 @@ end, "trigger.triggerMode");
 createToggle(trigLeft, "Wall Check", Config.Trigger.WallCheck, function(v)
 	Config.Trigger.WallCheck = v;
 end, "trigger.wallCheck");
-local trigRight = createSection(CombatPage, "Settings", "left");
-createSlider(trigRight, "Range (studs)", 1, 250, Config.Trigger.MaxRange, function(v)
+createToggle(trigLeft, "FOV Trigger (нужен Silent Aim)", Config.Trigger.FovTriggerActive, function(v)
+	Config.Trigger.FovTriggerActive = v;
+end, "trigger.fovTrigger");
+-- Иконки - РЕАЛЬНЫЕ Tool.TextureId этой игры, не нарисованные: все 4 получены
+-- живым сканом Backpack через MCP (potassium) - Revolver/Double-Barrel SG в
+-- первом скане, Shotgun/TacticalShotgun довзяты отдельным сканом после того,
+-- как они реально побывали в инвентаре (Boom Hood выдаёт оружие по раунду,
+-- не статично через StarterPack - раньше раунда с этим стволом его TextureId
+-- взять неоткуда). resolveWeaponIconsFromBackpack() остаётся как рантайм
+-- fallback: если когда-нибудь появится ещё оружие вне этих четырёх имён, её
+-- иконка подхватится сама через Backpack.ChildAdded/CharacterAdded.
+local WEAPON_ICON_CACHE = {
+	["[Revolver]"] = "rbxassetid://70549548685028",
+	["[Double-Barrel SG]"] = "rbxassetid://136265344426714",
+	["[Shotgun]"] = "rbxassetid://136253242180229",
+	["[TacticalShotgun]"] = "rbxassetid://136869042010169",
+};
+local weaponIconImages = {};
+local function resolveWeaponIconsFromBackpack()
+	local function scanOne(container)
+		if not container then return; end
+		for _, v in ipairs(container:GetChildren()) do
+			if v:IsA("Tool") and (not WEAPON_ICON_CACHE[v.Name]) then
+				local ok, tex = pcall(function() return v.TextureId; end);
+				if ok and (type(tex) == "string") and (tex ~= "") then
+					WEAPON_ICON_CACHE[v.Name] = tex;
+					local img = weaponIconImages[v.Name];
+					if img then img.Image = tex; end
+				end
+			end
+		end
+	end
+	scanOne(LocalPlayer and LocalPlayer:FindFirstChild("Backpack"));
+	scanOne(LocalPlayer and LocalPlayer.Character);
+end
+local WEAPON_SWAP_TOGGLE_LIST = {
+	{ name = "[Revolver]", label = "Revolver" },
+	{ name = "[Double-Barrel SG]", label = "Double-Barrel SG" },
+	{ name = "[Shotgun]", label = "Shotgun" },
+	{ name = "[TacticalShotgun]", label = "Tactical Shotgun" },
+};
+resolveWeaponIconsFromBackpack();
+do
+	local bp = LocalPlayer and LocalPlayer:FindFirstChild("Backpack");
+	if bp then
+		connectLive(bp.ChildAdded, function() resolveWeaponIconsFromBackpack(); end);
+	end
+	connectLive(LocalPlayer.CharacterAdded, function()
+		task.wait(0.5);
+		resolveWeaponIconsFromBackpack();
+	end);
+end
+-- ===== Auto Weapon Swap: после реального выстрела триггера оружием из
+-- "Triggers on" ниже - эквип + настоящий выстрел каждым оружием из
+-- "Spam with" (кто реально в бэкпаке), потом обратно на исходное.
+-- Раскрывающийся список, две отдельные группы чеклистов в одном holder'е.
+local _, damageSpamRow = createToggle(trigLeft, "Auto Weapon Swap", Config.Trigger.WeaponSwap.Enabled, function(v)
+	Config.Trigger.WeaponSwap.Enabled = v;
+end, "trigger.weaponSwapEnable");
+local spamListArrow = Instance.new("TextButton");
+spamListArrow.Name = "SpamListArrow";
+spamListArrow.AutoButtonColor = false;
+spamListArrow.AnchorPoint = Vector2.new(1, 0.5);
+spamListArrow.Position = UDim2.new(1, -42, 0.5, 0);
+spamListArrow.Size = UDim2.fromOffset(18, 18);
+spamListArrow.BackgroundTransparency = 1;
+spamListArrow.Font = Enum.Font.GothamBold;
+spamListArrow.TextColor3 = theme.textDim;
+spamListArrow.TextSize = 14;
+spamListArrow.Text = "»";
+spamListArrow.Parent = damageSpamRow;
+addHover(spamListArrow, theme.surfaceElevated, theme.surfaceSoft);
+local spamListHolder = Instance.new("Frame");
+spamListHolder.Name = "SpamListHolder";
+spamListHolder.BackgroundTransparency = 1;
+spamListHolder.Size = UDim2.new(1, 0, 0, 0);
+spamListHolder.AutomaticSize = Enum.AutomaticSize.Y;
+spamListHolder.Visible = false;
+spamListHolder.Parent = trigLeft;
+local spamListPad = Instance.new("UIPadding");
+spamListPad.PaddingLeft = UDim.new(0, 6);
+spamListPad.PaddingRight = UDim.new(0, 6);
+spamListPad.PaddingTop = UDim.new(0, 2);
+spamListPad.PaddingBottom = UDim.new(0, 2);
+spamListPad.Parent = spamListHolder;
+local spamListLayout = Instance.new("UIListLayout");
+spamListLayout.Padding = UDim.new(0, 6);
+spamListLayout.Parent = spamListHolder;
+local spamListExpanded = false;
+local function setSpamListExpanded(expanded)
+	spamListExpanded = expanded;
+	tween(spamListArrow, 0.16, { Rotation = expanded and -90 or 0 });
+	spamListHolder.Visible = expanded;
+end
+spamListArrow.MouseButton1Click:Connect(function()
+	setSpamListExpanded(not spamListExpanded);
+end);
+-- Один список: отмеченное оружие и ТРИГГЕРИТ свап (когда оно у тебя в руках
+-- и триггер стреляет), и само участвует как цель спама (когда в руках
+-- какое-то ДРУГОЕ отмеченное оружие). Работает только вместе с триггером -
+-- triggerWeaponSwap() вызывается исключительно из точек выстрела Trigger
+-- Mode 1/2/3 и FOV Trigger, нигде больше.
+for _, w in ipairs(WEAPON_SWAP_TOGGLE_LIST) do
+	local _, wRow = createToggle(spamListHolder, w.label, Config.Trigger.WeaponSwap.Weapons[w.name] or false, function(v)
+		Config.Trigger.WeaponSwap.Weapons[w.name] = v;
+	end, "trigger.weaponSwap." .. w.name);
+	local icon = Instance.new("ImageLabel");
+	icon.Name = "WeaponIcon";
+	icon.BackgroundTransparency = 1;
+	icon.AnchorPoint = Vector2.new(0, 0.5);
+	icon.Position = UDim2.new(0, 14, 0.5, 0);
+	icon.Size = UDim2.fromOffset(22, 22);
+	icon.ScaleType = Enum.ScaleType.Fit;
+	icon.Image = WEAPON_ICON_CACHE[w.name] or "";
+	icon.Parent = wRow;
+	weaponIconImages[w.name] = weaponIconImages[w.name] or icon;
+	local captionLabel = wRow:FindFirstChildOfClass("TextLabel");
+	if captionLabel then
+		captionLabel.Position = UDim2.fromOffset(44, 10);
+		captionLabel.Size = UDim2.new(1, -88, 0, 18);
+	end
+	-- Слайдер числа выстрелов сидит сразу под тогглом Revolver (не после
+	-- всего списка) - порядок внутри spamListHolder = порядок вставки
+	-- (UIListLayout без явного LayoutOrder), поэтому вставляем прямо тут,
+	-- на той же итерации цикла, где создан тоггл Revolver.
+	if w.name == "[Revolver]" then
+		createSlider(spamListHolder, "Revolver Shots Before Swap", 1, 6, Config.Trigger.WeaponSwap.RevolverShots, function(v)
+			Config.Trigger.WeaponSwap.RevolverShots = v;
+		end, 0, "trigger.weaponSwapRevolverShots");
+	end
+end
+createSlider(trigLeft, "Range (studs)", 1, 250, Config.Trigger.MaxRange, function(v)
 	Config.Trigger.MaxRange = v;
 end, 0, "trigger.range");
-createSlider(trigRight, "Delay (seconds)", 0, 2, Config.Trigger.Delay, function(v)
+createSlider(trigLeft, "Delay (seconds)", 0, 2, Config.Trigger.Delay, function(v)
 	Config.Trigger.Delay = v;
 end, 2, "trigger.delay");
 
 -- ===== Backtrack (стрельба по прошлой позиции хитбокса) =====
-local btSec = createSection(CombatPage, "Backtrack", "left");
+local btSec = createSection(CombatPage, "Backtrack", "right");
 createToggle(btSec, "Enable Backtrack", Config.SilentAim.Backtrack.Enabled, function(v)
 	Config.SilentAim.Backtrack.Enabled = v;
 end, "backtrack.enable");
@@ -3782,9 +4318,367 @@ createColorRow(btSec, "Backtrack Hitbox Color", function() return Config.SilentA
 	Config.SilentAim.Backtrack.HitboxColor = c;
 end, "backtrack.hitboxColor", Color3.fromRGB(255, 255, 255));
 
+-- ===== Hitbox Expander: ПОСЛЕ БАНА (30 дней, esp_adornment/size_mismatch) —
+-- переписано с нуля без мутации чужих инстансов. Старая версия создавала
+-- BoxHandleAdornment+SelectionBox как детей ЧУЖОГО HumanoidRootPart и меняла его
+-- реальный Size/CanCollide. Проблема: мьютер глушит репорт только на ТВОЁМ
+-- клиенте. watchPart в ExamsAC стоит у КАЖДОГО игрока в сервере и слушает
+-- GetPropertyChangedSignal("Size") на HumanoidRootPart СВОЕГО ЖЕ персонажа —
+-- если у цели есть network ownership над её HRP (стандартно так и есть, Roblox
+-- по умолчанию отдаёт владение частями персонажа его же клиенту) и CanCollide/
+-- Size реально меняются на объекте, который цель владеет и чей AC не твой и
+-- не замьючен, задетектить может АНТИЧИТ ЖЕРТВЫ, а не твой собственный —
+-- мьютить там нечего, он физически не на твоей машине. Фикс: не трогать чужой
+-- HumanoidRootPart вообще. Чисто визуальный wireframe через Frame/ScreenGui —
+-- локальные Instance'ы в твоём собственном ScreenGui, не дети Character ни
+-- одного игрока, ничего не replicate'ится и нечего детектить ни на твоей
+-- стороне, ни на стороне цели. "Show Hitbox Overlay" ниже - чисто визуальный
+-- wireframe, как и было. Отдельно от него "Enable Hitbox Expander" (другой
+-- тоггл, можно включать независимо) реально расширяет регистрацию попаданий:
+-- в shoot-хуке (ниже) после реального realShoot(p1), если настоящий выстрел
+-- мимо - проверяем, прошла ли его траектория через УВЕЛИЧЕННЫЙ бокс вокруг
+-- чьего-то РЕАЛЬНОГО (не изменённого!) HumanoidRootPart, и если да - просто
+-- подменяем hit-инстанс в ВОЗВРАЩАЕМОМ значении хука. Это тот же трюк, что
+-- Rage-redirect и бектрек уже делают - решение "засчитан ли хит" целиком
+-- в нашей локальной функции, чужой Instance не трогается ни on, ни off. =====
+do
+	local hbSec = createSection(CombatPage, "Hitbox Expander", "right");
+	createToggle(hbSec, "Enable Hitbox Expander", Config.Combat.HitboxExpander.Enabled, function(v)
+		Config.Combat.HitboxExpander.Enabled = v;
+	end, "combat.hitboxExpander.enabled");
+	-- Один глобальный тоггл - вкл/выкл оверлея целиком. Размер оверлея сам
+	-- подстраивается под оружие, которое сейчас в руках (getHitboxExpanderSize()
+	-- читает Config.Combat.HitboxExpander.PerWeapon[имя текущего тула]) -
+	-- никакого отдельного тоггла по оружию не нужно, он один на всех.
+	createToggle(hbSec, "Show Hitbox Overlay", Config.Combat.HitboxExpander.ShowHitbox, function(v)
+		Config.Combat.HitboxExpander.ShowHitbox = v;
+	end, "combat.hitboxExpander.show");
+	-- Ряд иконок без подписей - клик открывает маленькое ПЕРЕТАСКИВАЕМОЕ
+	-- окно с настройками хитбокса конкретно этого оружия. Drag-паттерн
+	-- скопирован с KeybindsFrame выше по файлу (InputBegan на хэдере +
+	-- UserInputService.InputChanged/InputEnded трекают позицию). Окна - своя
+	-- ScreenGui поверх всего, не зажаты в скролл CombatPage, можно таскать
+	-- куда угодно по экрану. Один попап на оружие создаётся один раз при
+	-- билде меню (не пересоздаётся на лету) - проще и надёжнее, чем
+	-- перепривязывать один общий набор слайдеров к разным оружиям на каждый
+	-- клик. Ряд иконок создаётся и парентится в hbSec В САМОМ КОНЦЕ (после
+	-- createColorRow ниже), чтобы лечь в самый низ секции - порядок детей
+	-- внутри section = порядок их появления на экране.
+	local hbPopupGui = Instance.new("ScreenGui");
+	hbPopupGui.Name = "emolineHbPopupGui";
+	hbPopupGui.ResetOnSpawn = false;
+	hbPopupGui.DisplayOrder = 1002;
+	pcall(function() hbPopupGui.Parent = resolveHuiParent(); end);
+	if (hbPopupGui.Parent == nil) then
+		hbPopupGui.Parent = LocalPlayer:WaitForChild("PlayerGui");
+	end
+
+	local iconRow = Instance.new("Frame");
+	iconRow.BackgroundTransparency = 1;
+	iconRow.Size = UDim2.new(1, 0, 0, 36);
+	local iconRowLayout = Instance.new("UIListLayout");
+	iconRowLayout.FillDirection = Enum.FillDirection.Horizontal;
+	iconRowLayout.Padding = UDim.new(0, 8);
+	iconRowLayout.VerticalAlignment = Enum.VerticalAlignment.Center;
+	iconRowLayout.Parent = iconRow;
+
+	local HITBOX_PER_WEAPON_LIST = {
+		{ name = "[Revolver]", label = "Revolver" },
+		{ name = "[Double-Barrel SG]", label = "Double-Barrel SG" },
+		{ name = "[Shotgun]", label = "Shotgun" },
+		{ name = "[TacticalShotgun]", label = "Tactical Shotgun" },
+	};
+	local hbPopups = {};
+	local popupCascade = 0;
+	for _, w in ipairs(HITBOX_PER_WEAPON_LIST) do
+		local per = Config.Combat.HitboxExpander.PerWeapon[w.name];
+
+		local iconBtn = Instance.new("ImageButton");
+		iconBtn.BackgroundColor3 = theme.surfaceElevated;
+		iconBtn.BackgroundTransparency = 0.3;
+		iconBtn.Size = UDim2.fromOffset(36, 36);
+		iconBtn.Image = WEAPON_ICON_CACHE[w.name] or "";
+		iconBtn.ScaleType = Enum.ScaleType.Fit;
+		iconBtn.Parent = iconRow;
+		applyCorner(iconBtn, 8);
+		applyStroke(iconBtn, theme.strokeSoft, 1, 0.5);
+		addHover(iconBtn, theme.surfaceElevated, theme.surfaceSoft);
+
+		-- Высота с запасом под 3 слайдера (50px каждый) + хэдер(28) + паддинги.
+		local popup = Instance.new("Frame");
+		popup.Name = "HbPopup_" .. w.name;
+		popup.Size = UDim2.fromOffset(190, 212);
+		popup.Position = UDim2.fromOffset(160 + popupCascade, 160 + popupCascade);
+		popup.BackgroundColor3 = theme.surface;
+		popup.BackgroundTransparency = 0.05;
+		popup.BorderSizePixel = 0;
+		popup.Visible = false;
+		popup.Parent = hbPopupGui;
+		popupCascade = popupCascade + 24;
+		applyCorner(popup, 12);
+		local popupStroke = Instance.new("UIStroke");
+		popupStroke.Color = theme.glassStroke;
+		popupStroke.Thickness = 1;
+		popupStroke.Transparency = 0.8;
+		popupStroke.Parent = popup;
+
+		local popupHeader = Instance.new("Frame");
+		popupHeader.Name = "Header";
+		popupHeader.Size = UDim2.new(1, 0, 0, 28);
+		popupHeader.BackgroundTransparency = 1;
+		popupHeader.BorderSizePixel = 0;
+		popupHeader.Parent = popup;
+
+		local popupIcon = Instance.new("ImageLabel");
+		popupIcon.BackgroundTransparency = 1;
+		popupIcon.AnchorPoint = Vector2.new(0, 0.5);
+		popupIcon.Position = UDim2.new(0, 8, 0.5, 0);
+		popupIcon.Size = UDim2.fromOffset(18, 18);
+		popupIcon.ScaleType = Enum.ScaleType.Fit;
+		popupIcon.Image = WEAPON_ICON_CACHE[w.name] or "";
+		popupIcon.Parent = popupHeader;
+
+		local popupTitle = Instance.new("TextLabel");
+		popupTitle.BackgroundTransparency = 1;
+		popupTitle.Position = UDim2.fromOffset(32, 0);
+		popupTitle.Size = UDim2.new(1, -62, 1, 0);
+		popupTitle.Font = Enum.Font.GothamBold;
+		popupTitle.TextSize = 12;
+		popupTitle.TextColor3 = theme.textDim;
+		popupTitle.TextXAlignment = Enum.TextXAlignment.Left;
+		popupTitle.Text = w.label;
+		popupTitle.Parent = popupHeader;
+
+		local popupClose = Instance.new("TextButton");
+		popupClose.AnchorPoint = Vector2.new(1, 0.5);
+		popupClose.Position = UDim2.new(1, -8, 0.5, 0);
+		popupClose.Size = UDim2.fromOffset(18, 18);
+		popupClose.BackgroundTransparency = 1;
+		popupClose.Font = Enum.Font.GothamBold;
+		popupClose.TextColor3 = theme.textDim;
+		popupClose.TextSize = 14;
+		popupClose.Text = "×";
+		popupClose.Parent = popupHeader;
+		popupClose.MouseButton1Click:Connect(function()
+			popup.Visible = false;
+		end);
+
+		local popupBody = Instance.new("Frame");
+		popupBody.BackgroundTransparency = 1;
+		popupBody.Position = UDim2.fromOffset(8, 32);
+		popupBody.Size = UDim2.new(1, -16, 1, -40);
+		popupBody.Parent = popup;
+		local popupBodyLayout = Instance.new("UIListLayout");
+		popupBodyLayout.Padding = UDim.new(0, 6);
+		popupBodyLayout.Parent = popupBody;
+
+		createSlider(popupBody, "Size X", 4, 50, per.SizeX, function(v)
+			per.SizeX = v;
+		end, 0, "combat.hitboxExpander.perWeapon." .. w.name .. ".sizeX");
+		createSlider(popupBody, "Size Y", 4, 50, per.SizeY, function(v)
+			per.SizeY = v;
+		end, 0, "combat.hitboxExpander.perWeapon." .. w.name .. ".sizeY");
+		createSlider(popupBody, "Size Z", 4, 50, per.SizeZ, function(v)
+			per.SizeZ = v;
+		end, 0, "combat.hitboxExpander.perWeapon." .. w.name .. ".sizeZ");
+
+		do
+			local dragStart, startPos, dragging;
+			popupHeader.InputBegan:Connect(function(input)
+				if (input.UserInputType == Enum.UserInputType.MouseButton1) then
+					dragging = true;
+					dragStart = input.Position;
+					startPos = popup.Position;
+				end
+			end);
+			connectLive(UserInputService.InputChanged, function(input)
+				if (dragging and (input.UserInputType == Enum.UserInputType.MouseMovement)) then
+					local delta = input.Position - dragStart;
+					popup.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y);
+				end
+			end);
+			connectLive(UserInputService.InputEnded, function(input)
+				if (input.UserInputType == Enum.UserInputType.MouseButton1) then
+					dragging = false;
+				end
+			end);
+		end
+
+		iconBtn.MouseButton1Click:Connect(function()
+			popup.Visible = not popup.Visible;
+		end);
+		table.insert(hbPopups, popup);
+	end
+	-- Закрывать попапы вместе с главным меню - иначе зависнут на экране
+	-- после закрытия Main (в отличие от KeybindsFrame, который и задуман
+	-- как постоянный HUD, этот попап - просто редактор настроек).
+	-- Закрываются вместе с главным меню (не висят над геймплеем, когда меню
+	-- свёрнуто), но ПОМНЯТ, какие были открыты - при повторном открытии меню
+	-- те же панельки появляются сами, не нужно заново тыкать по иконкам.
+	-- Явное закрытие крестиком (×) в это не попадает - popup.Visible там
+	-- просто выставляется в false напрямую, без подсказки hbPopupWasOpen.
+	local hbPopupWasOpen = {};
+	connectLive(Main:GetPropertyChangedSignal("Visible"), function()
+		if Main.Visible then
+			for _, popup in ipairs(hbPopups) do
+				if hbPopupWasOpen[popup] then
+					popup.Visible = true;
+					hbPopupWasOpen[popup] = nil;
+				end
+			end
+		else
+			for _, popup in ipairs(hbPopups) do
+				if popup.Visible then
+					hbPopupWasOpen[popup] = true;
+					popup.Visible = false;
+				end
+			end
+		end
+	end);
+	createColorRow(hbSec, "Hitbox Color", function() return Config.Combat.HitboxExpander.Color; end, function(c)
+		Config.Combat.HitboxExpander.Color = c;
+	end, "combat.hitboxExpander.color", Color3.fromRGB(37, 115, 184));
+	iconRow.Parent = hbSec;
+end
+
+do
+	local genv = (getgenv and getgenv()) or _G;
+	local regKey = "emolineHbOverlayReg";
+	if genv[regKey] and type(genv[regKey].teardown) == "function" then
+		pcall(genv[regKey].teardown);
+	end
+	destroyGuiByName("emolineHbOverlayGui");
+	local hbGui = Instance.new("ScreenGui");
+	hbGui.Name = "emolineHbOverlayGui";
+	hbGui.ResetOnSpawn = false;
+	hbGui.IgnoreGuiInset = true;
+	hbGui.DisplayOrder = 5;
+	hbGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling;
+	local okParent = pcall(function() hbGui.Parent = resolveHuiParent(); end);
+	if not okParent then
+		hbGui.Parent = LocalPlayer:WaitForChild("PlayerGui");
+	end
+	local HB_EDGES = {
+		{1,2},{2,3},{3,4},{4,1},
+		{5,6},{6,7},{7,8},{8,5},
+		{1,5},{2,6},{3,7},{4,8},
+	};
+	local hbLines = {}; -- player -> 12 Frame
+	local function newGuiLine()
+		local line = Instance.new("Frame");
+		line.AnchorPoint = Vector2.new(0.5, 0.5);
+		line.BorderSizePixel = 0;
+		line.Visible = false;
+		line.Parent = hbGui;
+		return line;
+	end
+	local function setGuiLine(line, x1, y1, x2, y2, color)
+		local dx, dy = x2 - x1, y2 - y1;
+		local len = math.sqrt(dx * dx + dy * dy);
+		if len < 0.5 then line.Visible = false; return; end
+		line.Size = UDim2.fromOffset(len, 1.5);
+		line.Position = UDim2.fromOffset((x1 + x2) / 2, (y1 + y2) / 2);
+		line.Rotation = math.deg(math.atan2(dy, dx));
+		line.BackgroundColor3 = color;
+		line.Visible = true;
+	end
+	local function getOrCreateLines(plr)
+		if hbLines[plr] then return hbLines[plr]; end
+		local lines = {};
+		for i = 1, 12 do lines[i] = newGuiLine(); end
+		hbLines[plr] = lines;
+		return lines;
+	end
+	local function hideAll(plr)
+		local lines = hbLines[plr];
+		if lines then
+			for _, line in ipairs(lines) do pcall(function() line.Visible = false; end); end
+		end
+	end
+	local function removeLines(plr)
+		local lines = hbLines[plr];
+		if lines then
+			for _, line in ipairs(lines) do pcall(function() line:Destroy(); end); end
+		end
+		hbLines[plr] = nil;
+	end
+	local function corners(cf, size)
+		local half = size * 0.5;
+		return {
+			(cf * CFrame.new( half.X,  half.Y,  half.Z)).Position,
+			(cf * CFrame.new(-half.X,  half.Y,  half.Z)).Position,
+			(cf * CFrame.new(-half.X, -half.Y,  half.Z)).Position,
+			(cf * CFrame.new( half.X, -half.Y,  half.Z)).Position,
+			(cf * CFrame.new( half.X,  half.Y, -half.Z)).Position,
+			(cf * CFrame.new(-half.X,  half.Y, -half.Z)).Position,
+			(cf * CFrame.new(-half.X, -half.Y, -half.Z)).Position,
+			(cf * CFrame.new( half.X, -half.Y, -half.Z)).Position,
+		};
+	end
+	local hbConn = connectLive(RunService.RenderStepped, function()
+		local cfg = Config.Combat.HitboxExpander;
+		if SAEnv.emolineUnloaded or not cfg.ShowHitbox then
+			for plr in pairs(hbLines) do hideAll(plr); end
+			return;
+		end
+		local cam = workspace.CurrentCamera;
+		if not cam then return; end
+		local color = (typeof(cfg.Color) == "Color3") and cfg.Color or Color3.fromRGB(37, 115, 184);
+		local sx, sy, sz = getHitboxExpanderSize();
+		local size = Vector3.new(sx, sy, sz);
+		for _, p in ipairs(Players:GetPlayers()) do
+			if p ~= LocalPlayer then
+				local drawn = false;
+				local char = p.Character;
+				-- Mode-check внутри, не в условии входа в тело — иначе для игрока,
+				-- которого сняли с таргета, hideAll(p) ниже вообще не вызовется
+				-- (тело цикла пропускается целиком), и его старый бокс зависнет
+				-- навсегда (та же природа бага, что чинили у FOV Trigger раньше).
+				if (GetPlayerMode(p.Name) == MODE_TRIGGER) and char and isAlive(p) and (not isKnockedOut(p)) then
+					local hrp = char:FindFirstChild("HumanoidRootPart");
+					if hrp and hrp:IsA("BasePart") then
+						local pts = corners(hrp.CFrame, size);
+						local screenPts = {};
+						local onScreen = true;
+						for _, p3 in ipairs(pts) do
+							local sp = cam:WorldToViewportPoint(p3);
+							if sp.Z < 0.1 then onScreen = false; end
+							table.insert(screenPts, Vector2.new(sp.X, sp.Y));
+						end
+						if onScreen then
+							local lines = getOrCreateLines(p);
+							for idx, edge in ipairs(HB_EDGES) do
+								local a, b = screenPts[edge[1]], screenPts[edge[2]];
+								setGuiLine(lines[idx], a.X, a.Y, b.X, b.Y, color);
+							end
+							drawn = true;
+						end
+					end
+				end
+				if not drawn then hideAll(p); end
+			end
+		end
+		for plr in pairs(hbLines) do
+			if not plr.Parent then removeLines(plr); end
+		end
+	end);
+	connectLive(Players.PlayerRemoving, function(plr)
+		removeLines(plr);
+	end);
+	genv[regKey] = {
+		teardown = function()
+			for plr in pairs(hbLines) do removeLines(plr); end
+			hbLines = {};
+			if hbConn and hbConn.Disconnect then pcall(function() hbConn:Disconnect(); end); end
+			pcall(function() hbGui:Destroy(); end);
+			genv[regKey] = nil;
+		end,
+	};
+end
+
 -- ===== Aim: Silent Aim =====
 local aimLeft = createSection(AimPage, "Silent Aim", "left");
-local silentAimToggleSetter = createToggle(aimLeft, "Enable Silent Aim", Config.SilentAim.Enabled, function(v)
+silentAimToggleSetter = createToggle(aimLeft, "Enable Silent Aim", Config.SilentAim.Enabled, function(v)
 	Config.SilentAim.Enabled = v;
 end, "silentAim.enable");
 createKeybind(aimLeft, "Silent Aim Key", {
@@ -3819,9 +4713,6 @@ end, "silentAim.showFov");
 createSlider(aimRight, "Max Range (studs)", 10, 500, Config.SilentAim.MaxRange, function(v)
 	Config.SilentAim.MaxRange = v;
 end, 0, "silentAim.range");
-createToggle(aimRight, "Visibility Check", Config.SilentAim.Visibility, function(v)
-	Config.SilentAim.Visibility = v;
-end, "silentAim.visibility");
 semiSec = createSection(AimPage, "Rage Settings", "left");
 createSlider(semiSec, "FOV", 1, 180, Config.SilentAim.FOV, function(v)
 	Config.SilentAim.FOV = v;
@@ -3829,6 +4720,16 @@ end, 0, "silentAim.fov");
 createSlider(semiSec, "Target Switch Delay (s)", 0, 3, Config.SilentAim.TargetSwitchDelay, function(v)
 	Config.SilentAim.TargetSwitchDelay = v;
 end, 2, "silentAim.rageDelay");
+-- Триггер по-прежнему целится/стреляет в пределах СВОЕЙ дистанции
+-- (Config.Trigger.MaxRange) - эта фича не трогает когда триггер решает
+-- стрелять, только то, на каком расстоянии редирект урона готов искать
+-- цель, когда выстрел уже случился.
+createToggle(semiSec, "Unlimited Range", Config.SilentAim.UnlimitedRange, function(v)
+	Config.SilentAim.UnlimitedRange = v;
+end, "silentAim.unlimitedRange");
+createSlider(semiSec, "Unlimited Range Distance", 250, 5000, Config.SilentAim.UnlimitedRangeDistance, function(v)
+	Config.SilentAim.UnlimitedRangeDistance = v;
+end, 0, "silentAim.unlimitedRangeDistance");
 legitSec = createSection(AimPage, "Legit Settings", "left");
 createSlider(legitSec, "Legit FOV", 0.1, 179, Config.SilentAim.Legit.FOV, function(v)
 	Config.SilentAim.Legit.FOV = v;
@@ -3862,6 +4763,9 @@ end, "esp.names");
 createToggle(espSection, "ESP Health", Config.Esp.Health, function(v)
 	Config.Esp.Health = v;
 end, "esp.health");
+createToggle(espSection, "Only Target", Config.Esp.OnlyTarget, function(v)
+	Config.Esp.OnlyTarget = v;
+end, "esp.onlyTarget");
 createColorRow(espSection, "Box Color", function() return Config.Esp.BoxColor; end, function(c)
 	Config.Esp.BoxColor = c;
 end, "esp.boxColor", Color3.fromRGB(255, 255, 255));
@@ -3871,14 +4775,6 @@ end, "esp.nameColor", Color3.fromRGB(255, 255, 255));
 createColorRow(espSection, "HP Color", function() return Config.Esp.HpColor; end, function(c)
 	Config.Esp.HpColor = c;
 end, "esp.hpColor", Color3.fromRGB(255, 255, 255));
-local espHitbox = createSection(EspPage, "Hitbox", "right");
-createToggle(espHitbox, "Show Hitbox", Config.Esp.Hitbox, function(v)
-	Config.Esp.Hitbox = v;
-end, "esp.hitbox");
-createColorRow(espHitbox, "Hitbox Color", function() return Config.Esp.HitboxColor; end, function(c)
-	Config.Esp.HitboxColor = c;
-end, "esp.hitboxColor", Color3.fromRGB(255, 255, 255));
-
 -- ===== Autoshoot =====
 local autoLeft = createSection(AutoshootPage, "Autoshoot", "left");
 createToggle(autoLeft, "Enable Autoshoot", Config.Autoshoot.Active, function(v)
@@ -3895,11 +4791,10 @@ autoKeybind = createKeybind(autoLeft, "Autoshoot Key", {
 	apply = function()
 	end,
 });
-local autoRight = createSection(AutoshootPage, "Shooting", "right");
-createSlider(autoRight, "Delay after Host (ms)", 0, 5000, Config.Autoshoot.ShootDelayMs, function(v)
+createSlider(autoLeft, "Delay after Host (ms)", 0, 5000, Config.Autoshoot.ShootDelayMs, function(v)
 	Config.Autoshoot.ShootDelayMs = v;
 end, 0, "autoshoot.delay");
-createDropdown(autoRight, "Click Mode", { "Multi", "Single" }, (Config.Autoshoot.ShotsPerTrigger == 6) and "Multi" or "Single", function(v)
+createDropdown(autoLeft, "Click Mode", { "Multi", "Single" }, (Config.Autoshoot.ShotsPerTrigger == 6) and "Multi" or "Single", function(v)
 	Config.Autoshoot.ShotsPerTrigger = (v == "Multi") and 6 or 1;
 end, "autoshoot.clickMode");
 
@@ -4258,6 +5153,18 @@ end);
 connectLive(UserInputService.InputEnded, function(input)
 	updateKeyStates(input, false);
 end);
+local settingsAppearance = createSection(SettingsPage, "Appearance", "right");
+createToggle(settingsAppearance, "Menu Blur", Config.MenuBlurEnabled, function(v)
+	Config.MenuBlurEnabled = v;
+	applyMenuBlurState(false);
+end, "settings.menuBlurEnabled");
+createSlider(settingsAppearance, "Blur Intensity (%)", 0, 100, Config.MenuBlurPercent, function(v)
+	Config.MenuBlurPercent = v;
+	applyMenuBlurState(false);
+end, 0, "settings.menuBlurPercent");
+createSlider(settingsAppearance, "Title Shimmer Speed (s/loop)", 1, 10, Config.TitleShimmerSpeed, function(v)
+	Config.TitleShimmerSpeed = v;
+end, 1, "settings.titleShimmerSpeed");
 local settingsConfig = createSection(SettingsPage, "Config", "right");
 createButton(settingsConfig, "Save Config", function()
 	cfgSaveConfig();
@@ -4265,6 +5172,10 @@ end);
 createButton(settingsConfig, "Load Config", function()
 	cfgLoadConfig();
 end);
+local settingsSafety = createSection(SettingsPage, "Safety", "right");
+createToggle(settingsSafety, "Panic Mode", Config.PanicMode.Enabled, function(v)
+	Config.PanicMode.Enabled = v;
+end, "settings.panicMode");
 local settingsUnload = createSection(SettingsPage, "Script", "left");
 createButton(settingsUnload, "Unload Script", function()
 	local SAEnv = (getgenv and getgenv()) or _G;
@@ -4322,7 +5233,6 @@ createButton(settingsUnload, "Unload Script", function()
 	nextAcquireAt = 0;
 	rageLockedPlayer = nil;
 	rageLockClock = 0;
-	rageNextAcquireAt = 0;
 	lastSilentTarget = nil;
 	lastSilentHrp = nil;
 	lastSilentPlayer = nil;
@@ -4351,7 +5261,7 @@ createButton(settingsUnload, "Unload Script", function()
 			end
 		end
 	end
-	for _, container in ipairs({ CoreGui, getHui(), LocalPlayer:FindFirstChild("PlayerGui") }) do
+	for _, container in ipairs({ CoreGui, getHui(), LocalPlayer:FindFirstChild("PlayerGui"), Lighting }) do
 		deepDestroyEmoline(container);
 	end
 	pcall(function() cleardrawcache(); end);
@@ -4374,8 +5284,8 @@ createTabButton("Aim", "aim", AimPage);
 createTabButton("Visuals", "visuals", EspPage);
 createTabButton("Autoshoot", "autoshoot", AutoshootPage);
 createTabButton("Misc", "misc", UtilityPage);
-end
-do
+end)();
+(function()
 local PlayersPageRoot = Instance.new("Frame");
 PlayersPageRoot.Name = "PlayersPage";
 PlayersPageRoot.BackgroundTransparency = 1;
@@ -4450,6 +5360,135 @@ local function btTriggerPick(mousePos, maxRange)
 	end
 	return nil;
 end
+-- ===== Trigger: Auto Weapon Swap - после реального выстрела триггера
+-- оружием из Weapons (отмеченным в чеклисте), дополнительно эквипит и
+-- СТРЕЛЯЕТ по-настоящему каждым ДРУГИМ отмеченным в том же Weapons оружием
+-- (которое реально есть в бэкпаке), затем возвращается на исходное. Один
+-- список служит и условием триггера, и набором целей для спама. Порт идеи
+-- из чужого скрипта ("TripleShot" - там жёстко только Double-Barrel
+-- триггерит, список запасных стволов захардкожен, задержка между эквипом и
+-- выстрелом ~0 без учёта сервера). Здесь: список настраивается чеклистом,
+-- задержка между каждым эквипом и выстрелом считается ВСЕГДА автоматически
+-- от РЕАЛЬНОГО пинга (Stats.Network.ServerStatsItem["Data Ping"] -
+-- официальный способ читать round-trip до сервера с клиента) + фиксированный
+-- запас на обработку, а не произвольный ноль (на ноль сервер с большей
+-- вероятностью не успеет обработать смену тула до клика, и часть "лишних"
+-- выстрелов просто не засчитается / спалит паттерн чаще). Тикрейт сервера
+-- Roblox скрипту не отдаёт ни через один API - запас на обработку зашит
+-- константой ниже. При недоступном Stats - фолбэк на WEAPON_SWAP_FALLBACK_MS.
+local WEAPON_SWAP_PING_MARGIN_MS = 40;
+local WEAPON_SWAP_FALLBACK_MS = 120;
+local NetworkStatsService = game:GetService("Stats").Network;
+local function getPingMs()
+	local ok, v = pcall(function()
+		return NetworkStatsService.ServerStatsItem["Data Ping"]:GetValue();
+	end);
+	if ok and (type(v) == "number") and (v > 0) then return v; end
+	return nil;
+end
+local WEAPON_SWAP_ORDER = { "[Revolver]", "[Double-Barrel SG]", "[Shotgun]", "[TacticalShotgun]" };
+-- Вся последовательность свапа занимает реальное время (3 итерации * ~2
+-- задержки на пинг каждая) - если просто отстрелять все 3 оружия вслепую по
+-- координатам курсора на МОМЕНТ ВЫЗОВА, цель за это время могла уйти из FOV/
+-- из-под прицела, а лишние выстрелы всё равно летели бы в пустоту. Эта
+-- функция поэтому заново проверяет "жив ли ещё повод стрелять" ПЕРЕД каждым
+-- отдельным выстрелом - тот же FOV-конус (Config.SilentAim.FOV), что и у
+-- самого FOV Trigger, плюс рейкаст под текущим курсором (для курсорных
+-- режимов триггера) - живая проверка, а не кэш на старте.
+local function hasValidTriggerTargetNow(mousePos)
+	local cam = workspace.CurrentCamera;
+	if not cam then return false; end
+	local myChar = LocalPlayer.Character;
+	local camPos = cam.CFrame.Position;
+	local fovMax = math.clamp(Config.SilentAim.FOV or 360, 0, 360);
+	local fovRad = math.rad(fovMax);
+	local aimRay = cam:ScreenPointToRay(mousePos.X, mousePos.Y);
+	local camDir = aimRay.Direction.Unit;
+	local currentRange = GetCurrentRange();
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p == LocalPlayer then continue; end
+		if GetPlayerMode(p.Name) ~= MODE_TRIGGER then continue; end
+		if (not isAlive(p)) or isKnockedOut(p) then continue; end
+		local char = p.Character;
+		if not char then continue; end
+		local part = getPrimaryPart(char);
+		if not part then continue; end
+		local toPart = part.Position - camPos;
+		local dist = toPart.Magnitude;
+		if (dist < 1e-3) or (dist > currentRange) then continue; end
+		local angle = math.acos(math.clamp(camDir:Dot(toPart.Unit), -1, 1));
+		if (fovRad >= math.pi) or (angle <= fovRad / 2) then return true; end
+		if btTriggerOnTarget(p, mousePos) then return true; end
+	end
+	local ignoreList = { myChar };
+	if myChar then
+		for _, tool in ipairs(myChar:GetChildren()) do
+			if tool:IsA("Tool") then table.insert(ignoreList, tool); end
+		end
+	end
+	local rayParams = RaycastParams.new();
+	rayParams.FilterType = Enum.RaycastFilterType.Exclude;
+	rayParams.FilterDescendantsInstances = ignoreList;
+	local ray = cam:ViewportPointToRay(mousePos.X, mousePos.Y);
+	local hit = workspace:Raycast(ray.Origin, ray.Direction * 1000, rayParams);
+	if hit and hit.Instance then
+		local model = hit.Instance:FindFirstAncestorWhichIsA("Model");
+		local hitPlayer = model and Players:GetPlayerFromCharacter(model);
+		if hitPlayer and (GetPlayerMode(hitPlayer.Name) == MODE_TRIGGER) then
+			return true;
+		end
+	end
+	return false;
+end
+local function triggerWeaponSwap()
+	local swapCfg = Config.Trigger.WeaponSwap;
+	if not (swapCfg and swapCfg.Enabled) then return; end
+	local char = LocalPlayer.Character;
+	local hum = char and char:FindFirstChildOfClass("Humanoid");
+	if not hum then return; end
+	local current = char:FindFirstChildOfClass("Tool");
+	if not current then return; end
+	if not (swapCfg.Weapons and swapCfg.Weapons[current.Name]) then return; end
+	local backpack = LocalPlayer:FindFirstChild("Backpack");
+	if not backpack then return; end
+	local ping = getPingMs();
+	local delayMs = ping and math.clamp(ping + WEAPON_SWAP_PING_MARGIN_MS, 20, 1000) or WEAPON_SWAP_FALLBACK_MS;
+	local delay = delayMs / 1000;
+	for _, wName in ipairs(WEAPON_SWAP_ORDER) do
+		-- Взял нож руками посреди свапа - он явно хочет выйти из боя, прерываем
+		-- немедленно и НЕ возвращаем исходное оружие обратно (навязывать его
+		-- поверх ножа - то же самое вмешательство, которого он просит не делать).
+		if isHoldingKnife() then return; end
+		local mousePos = UserInputService:GetMouseLocation();
+		if not hasValidTriggerTargetNow(mousePos) then return; end
+		if (wName ~= current.Name) and swapCfg.Weapons and swapCfg.Weapons[wName] then
+			local wpn = backpack:FindFirstChild(wName);
+			if wpn then
+				pcall(function() hum:EquipTool(wpn); end);
+				task.wait(delay);
+				-- Сколько раз подряд стрелять ЭТИМ оружием, прежде чем свапнуть на
+				-- следующее - настраивается только для револьвера (дешёвый быстрый
+				-- выстрел, остальным хватает одного раза). Между каждым выстрелом -
+				-- та же живая проверка ножа/цели, что и на любом другом шаге.
+				local shotsForThis = (wName == "[Revolver]") and math.max(swapCfg.RevolverShots or 1, 1) or 1;
+				for shotIndex = 1, shotsForThis do
+					if isHoldingKnife() then return; end
+					mousePos = UserInputService:GetMouseLocation();
+					if not hasValidTriggerTargetNow(mousePos) then return; end
+					VirtualInputManager:SendMouseButtonEvent(mousePos.X, mousePos.Y, 0, true, game, 1);
+					task.wait(0.01);
+					VirtualInputManager:SendMouseButtonEvent(mousePos.X, mousePos.Y, 0, false, game, 1);
+					if shotIndex < shotsForThis then
+						task.wait(delay);
+					end
+				end
+				task.wait(delay);
+			end
+		end
+	end
+	if isHoldingKnife() then return; end
+	pcall(function() hum:EquipTool(current); end);
+end
 task.spawn(function()
 	while true do
 		RunService.Heartbeat:Wait();
@@ -4482,6 +5521,7 @@ task.spawn(function()
 			VirtualInputManager:SendMouseButtonEvent(mousePos.X, mousePos.Y, 0, true, game, 1);
 			task.wait(0.01);
 			VirtualInputManager:SendMouseButtonEvent(mousePos.X, mousePos.Y, 0, false, game, 1);
+			triggerWeaponSwap();
 			continue;
 		end
 		for _, p in pairs(Players:GetPlayers()) do
@@ -4513,6 +5553,7 @@ task.spawn(function()
 			VirtualInputManager:SendMouseButtonEvent(mousePos.X, mousePos.Y, 0, true, game, 1);
 			task.wait(0.01);
 			VirtualInputManager:SendMouseButtonEvent(mousePos.X, mousePos.Y, 0, false, game, 1);
+			triggerWeaponSwap();
 		end
 	end
 end);
@@ -4539,6 +5580,7 @@ task.spawn(function()
 		VirtualInputManager:SendMouseButtonEvent(mousePos.X, mousePos.Y, 0, true, game, 1);
 		task.wait(0.01);
 		VirtualInputManager:SendMouseButtonEvent(mousePos.X, mousePos.Y, 0, false, game, 1);
+		triggerWeaponSwap();
 	end
 	local function playerFromPart(inst)
 		if not inst then return nil; end
@@ -4646,7 +5688,15 @@ end);
 -- режим Hitbox — попадание курсора в проекцию хитбокса на экран + WallCheck.
 task.spawn(function()
 	local function getHitboxScreenBounds(hrp, cam)
-		local size = hrp.Size;
+		-- Размер берётся из Hitbox Expander (Config.Combat.HitboxExpander),
+		-- не из реального hrp.Size цели - это чисто экранная проекция
+		-- виртуального бокса для теста "курсор внутри хитбокса", её сторона
+		-- физически не видит и не может видеть ничего из того, что раньше
+		-- ловило sweep/size_mismatch (там мутировался РЕАЛЬНЫЙ Instance цели,
+		-- здесь только наши локальные координаты для if-проверки). 8x8x4 по
+		-- умолчанию - то же, что было раньше, пока слайдеры не трогали.
+		local sizeX, sizeY, sizeZ = getHitboxExpanderSize();
+		local size = Vector3.new(sizeX, sizeY, sizeZ);
 		local cf = hrp.CFrame;
 		local corners = {
 			cf:PointToWorldSpace(Vector3.new(-size.X / 2, -size.Y / 2, -size.Z / 2)),
@@ -4715,6 +5765,7 @@ task.spawn(function()
 			VirtualInputManager:SendMouseButtonEvent(mousePos.X, mousePos.Y, 0, true, game, 1);
 			task.wait(0.01);
 			VirtualInputManager:SendMouseButtonEvent(mousePos.X, mousePos.Y, 0, false, game, 1);
+			triggerWeaponSwap();
 			continue;
 		end
 		for _, p in pairs(Players:GetPlayers()) do
@@ -4770,6 +5821,99 @@ task.spawn(function()
 			VirtualInputManager:SendMouseButtonEvent(mousePos.X, mousePos.Y, 0, true, game, 1);
 			task.wait(0.01);
 			VirtualInputManager:SendMouseButtonEvent(mousePos.X, mousePos.Y, 0, false, game, 1);
+			triggerWeaponSwap();
+		end
+	end
+end);
+-- ===== FOV Trigger: отдельная функция, не завязана на Trigger Mode (работает
+-- при любом Mode 1/2/3, не требует переключения режима) — стреляет не по
+-- курсору, а по углу от камеры, как сам Silent Aim выбирает цель (saAimDir +
+-- Config.SilentAim.FOV), по плеерлист-таргетам (MODE_TRIGGER). Свой тоггл
+-- FovTriggerActive, но всё ещё слушается мастер-рубильника Config.Trigger.Active
+-- (кнопка Trigger Key) — иначе офф по кнопке её не гасил, ровно этот баг и был.
+-- Жёстко требует Config.SilentAim.Enabled: сам FOV Trigger только кликает
+-- мышью, а реальный редирект пули живёт в getAim/shoot/packFire хуках, которые
+-- работают только при включённом Silent Aim - без него клик бьёт в то, куда
+-- физически смотрит камера, а не в выбранную цель.
+task.spawn(function()
+	while true do
+		RunService.Heartbeat:Wait();
+		if SAEnv.emolineUnloaded then break; end
+		if not Config.Trigger.Active then continue; end
+		if not Config.Trigger.FovTriggerActive then continue; end
+		if not Config.SilentAim.Enabled then continue; end
+		if isHoldingKnife() then continue; end
+		if not HasAmmo() then continue; end
+		if ((tick() - Config.Trigger.LastShot) < Config.Trigger.Delay) then continue; end
+		local cam = workspace.CurrentCamera;
+		if not cam then continue; end
+		local currentRange = GetCurrentRange();
+		local mousePos = UserInputService:GetMouseLocation();
+		-- Бектрек-приоритет, как у остальных режимов триггера.
+		local btPick = btTriggerPick(mousePos, currentRange);
+		if btPick then
+			Config.Trigger.LastShot = tick();
+			VirtualInputManager:SendMouseButtonEvent(mousePos.X, mousePos.Y, 0, true, game, 1);
+			task.wait(0.01);
+			VirtualInputManager:SendMouseButtonEvent(mousePos.X, mousePos.Y, 0, false, game, 1);
+			triggerWeaponSwap();
+			continue;
+		end
+		local camPos = cam.CFrame.Position;
+		-- saAimDir() сама недоступна здесь (локальная внутри do-блока Silent Aim
+		-- далеко выше) — та же формула: луч от камеры через позицию мыши/прицела.
+		local aimRay = cam:ScreenPointToRay(Mouse.X, Mouse.Y);
+		local camDir = aimRay.Direction.Unit;
+		local fovMax = math.clamp(Config.SilentAim.FOV or 360, 0, 360);
+		local fovRad = math.rad(fovMax);
+		local ignoreList = { LocalPlayer.Character };
+		if LocalPlayer.Character then
+			for _, tool in ipairs(LocalPlayer.Character:GetChildren()) do
+				if tool:IsA("Tool") then
+					table.insert(ignoreList, tool);
+				end
+			end
+		end
+		local bestTarget, bestAngle = nil, math.huge;
+		for _, p in ipairs(Players:GetPlayers()) do
+			if p == LocalPlayer then continue; end
+			if GetPlayerMode(p.Name) ~= MODE_TRIGGER then continue; end
+			if (not isAlive(p)) or isKnockedOut(p) then continue; end
+			local char = p.Character;
+			if not char then continue; end
+			local part = getPrimaryPart(char);
+			if not part then continue; end
+			local toPart = part.Position - camPos;
+			local dist = toPart.Magnitude;
+			if (dist < 1e-3) or (dist > currentRange) then continue; end
+			local angle = math.acos(math.clamp(camDir:Dot(toPart.Unit), -1, 1));
+			if (fovRad < math.pi) and (angle > fovRad / 2) then continue; end
+			-- Стена проверяется всегда, без обхода - WallbangLock убран.
+			local ray = Ray.new(camPos, toPart);
+			local hit = workspace:FindPartOnRayWithIgnoreList(ray, ignoreList);
+			if hit then
+				local hitPlayer = Players:GetPlayerFromCharacter(hit:FindFirstAncestorOfClass("Model"));
+				if hitPlayer ~= p then continue; end
+			end
+			if angle < bestAngle then
+				bestAngle = angle;
+				bestTarget = p;
+			end
+		end
+		if bestTarget then
+			Config.Trigger.LastShot = tick();
+			-- Синхронизируем лок Silent Aim с тем, кого РЕАЛЬНО выбрал FOV Trigger,
+			-- ПЕРЕД кликом: без этого saGetTarget() внутри shoot/getAim хуков мог
+			-- всё ещё держать (TargetSwitchDelay) предыдущего залоченного игрока,
+			-- и редирект уходил не туда, куда целился FOV Trigger, хотя сам клик
+			-- всё равно засчитывался как попадание по кому-то - ровно симптом
+			-- "редирекция не всегда срабатывает, а попадание есть".
+			rageLockedPlayer = bestTarget;
+			rageLockClock = os.clock();
+			VirtualInputManager:SendMouseButtonEvent(mousePos.X, mousePos.Y, 0, true, game, 1);
+			task.wait(0.01);
+			VirtualInputManager:SendMouseButtonEvent(mousePos.X, mousePos.Y, 0, false, game, 1);
+			triggerWeaponSwap();
 		end
 	end
 end);
@@ -4901,8 +6045,43 @@ searchRow.Size = UDim2.new(1, -24, 0, 30);
 searchRow.Position = UDim2.new(0, 12, 0, 60);
 searchRow.BackgroundTransparency = 1;
 searchRow.Parent = PlayersPageRoot;
+local rebuildPlayerListGUI;
+local headerNameLabel;
+local headerAutoshotLabel;
+local headerTriggerLabel;
+local viewToggleBtn = Instance.new("TextButton");
+viewToggleBtn.Size = UDim2.new(0, 88, 1, 0);
+viewToggleBtn.Position = UDim2.new(0, 0, 0, 0);
+viewToggleBtn.BackgroundColor3 = theme.surfaceElevated;
+viewToggleBtn.BackgroundTransparency = 0.3;
+viewToggleBtn.BorderSizePixel = 0;
+viewToggleBtn.Font = Enum.Font.GothamMedium;
+viewToggleBtn.TextSize = 11;
+viewToggleBtn.TextColor3 = theme.text;
+viewToggleBtn.Text = "CREWS";
+viewToggleBtn.AutoButtonColor = false;
+viewToggleBtn.Parent = searchRow;
+applyCorner(viewToggleBtn, 6);
+applyStroke(viewToggleBtn, theme.strokeSoft, 1, 0.5);
+local showCrewList = false;
+viewToggleBtn.MouseButton1Click:Connect(function()
+	showCrewList = not showCrewList;
+	viewToggleBtn.Text = showCrewList and "PLAYERS" or "CREWS";
+	viewToggleBtn.BackgroundColor3 = showCrewList and theme.surfaceSoft or theme.surfaceElevated;
+	if headerNameLabel then
+		headerNameLabel.Text = showCrewList and "CREW" or "DISPLAY NAME";
+	end
+	if headerAutoshotLabel then
+		headerAutoshotLabel.Visible = not showCrewList;
+	end
+	if headerTriggerLabel then
+		headerTriggerLabel.Position = UDim2.new(0, showCrewList and 315 or 430, 0, 0);
+	end
+	rebuildPlayerListGUI();
+end);
 local searchBox = Instance.new("TextBox");
-searchBox.Size = UDim2.new(1, 0, 1, 0);
+searchBox.Size = UDim2.new(1, -92, 1, 0);
+searchBox.Position = UDim2.new(0, 92, 0, 0);
 searchBox.BackgroundColor3 = theme.surfaceSoft;
 searchBox.BackgroundTransparency = 0.3;
 searchBox.BorderSizePixel = 0;
@@ -4932,6 +6111,89 @@ searchImg.ScaleType = Enum.ScaleType.Fit;
 searchImg.Image = ICON_ASSETS.search or "rbxassetid://10734943674";
 searchImg.ImageColor3 = theme.textDim;
 searchImg.Parent = searchIcon;
+local crewNameCache = getgenv().crewNameCache;
+if (type(crewNameCache) ~= "table") then
+	crewNameCache = {};
+	getgenv().crewNameCache = crewNameCache;
+end
+local crewPendingIds = {};
+local function getPlayerCrewId(plr)
+	local df = plr:FindFirstChild("DataFolder");
+	if not df then return nil; end
+	local info = df:FindFirstChild("Information");
+	if not info then return nil; end
+	local c = info:FindFirstChild("Crew");
+	if not c then return nil; end
+	local v = tostring(c.Value);
+	if (v == "") then return nil; end
+	return v;
+end
+local function fetchCrewNames(ids)
+	-- crewNameCache[id] == nil -> ещё не пробовали; == false -> пробовали,
+	-- не вышло (считаем "известно, не ретраим"); строка -> реальное имя.
+	-- Раньше неудачный фетч не кэшировался вообще: rebuildPlayerListGUI
+	-- на каждом (успешном ИЛИ провальном) завершении перестраивал крюлист
+	-- через buildCrewListGUI (Destroy+recreate всех Frame), который заново
+	-- находил тот же "некэшированный" id и запускал fetchCrewNames СНОВА —
+	-- бесконечный цикл fetch->rebuild->fetch, визуально это и есть "моргает".
+	local need = {};
+	for _, id in ipairs(ids) do
+		if (crewNameCache[id] == nil) and (not crewPendingIds[id]) then
+			crewPendingIds[id] = true;
+			table.insert(need, id);
+		end
+	end
+	if (#need == 0) then return; end
+	for _, id in ipairs(need) do
+		task.spawn(function()
+			local name = nil;
+			local body = nil;
+			local okR = false;
+			if type(request) == "function" then
+				local ok, r = pcall(request, { Url = "https://groups.roblox.com/v1/groups/" .. id, Method = "GET" });
+				if ok and (type(r) == "table") and (type(r.Body) == "string") then
+					body = r.Body;
+					okR = true;
+				end
+			end
+			if not okR then
+				local ok, r = pcall(function()
+					return game:GetService("HttpService"):GetAsync("https://groups.roblox.com/v1/groups/" .. id);
+				end);
+				if ok and (type(r) == "string") then
+					body = r;
+					okR = true;
+				end
+			end
+			if okR then
+				local ok2, j = pcall(function()
+					return game:GetService("HttpService"):JSONDecode(body);
+				end);
+				if ok2 and (type(j) == "table") and (type(j.name) == "string") and (j.name ~= "") then
+					name = j.name;
+				end
+			end
+			crewNameCache[id] = name or false; -- false = пробовали, не ретраим
+			crewPendingIds[id] = nil;
+			if not name then return; end -- провал — не дёргаем rebuild, нечего показывать по-другому
+			task.defer(function()
+				if rebuildPlayerListGUI then rebuildPlayerListGUI(); end
+			end);
+		end);
+	end
+end
+local function applyCrewMode(crewId, mode)
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if (plr ~= LocalPlayer) then
+			local id = getPlayerCrewId(plr);
+			local match = (crewId == nil) and (id == nil) or (crewId ~= nil) and (id == crewId);
+			if match then
+				SetPlayerMode(plr.Name, mode);
+			end
+		end
+	end
+	if rebuildPlayerListGUI then rebuildPlayerListGUI(); end
+end
 local HeaderRow = Instance.new("Frame");
 HeaderRow.Size = UDim2.new(1, -24, 0, 32);
 HeaderRow.Position = UDim2.new(0, 12, 0, 96);
@@ -4952,11 +6214,18 @@ local function makeColumnHeader(text, x, width, color, align)
 	label.TextSize = 11;
 	label.TextXAlignment = align;
 	label.Parent = HeaderRow;
+	return label;
 end
-makeColumnHeader("DISPLAY NAME", 12, 180, theme.text, Enum.TextXAlignment.Left);
+headerNameLabel = makeColumnHeader("DISPLAY NAME", 12, 180, theme.text, Enum.TextXAlignment.Left);
 makeColumnHeader("NEUTRAL", 200, 105, theme.textDim, Enum.TextXAlignment.Center);
-makeColumnHeader("AUTOSHOT", 315, 105, MODE_COLORS[MODE_AUTOSHOOT + 1], Enum.TextXAlignment.Center);
-makeColumnHeader("TRIGGER", 430, 105, Color3.new(1, 1, 1), Enum.TextXAlignment.Center);
+headerAutoshotLabel = makeColumnHeader("AUTOSHOT", 315, 105, MODE_COLORS[MODE_AUTOSHOOT + 1], Enum.TextXAlignment.Center);
+headerTriggerLabel = makeColumnHeader("TRIGGER", 430, 105, Color3.new(1, 1, 1), Enum.TextXAlignment.Center);
+headerAutoshotLabel.Visible = not showCrewList;
+if showCrewList then
+	headerTriggerLabel.Position = UDim2.new(0, 315, 0, 0);
+else
+	headerTriggerLabel.Position = UDim2.new(0, 430, 0, 0);
+end
 local PlayerScroll = Instance.new("ScrollingFrame");
 PlayerScroll.Size = UDim2.new(1, -24, 1, -144);
 PlayerScroll.Position = UDim2.new(0, 12, 0, 132);
@@ -4971,7 +6240,215 @@ local PlayerListLayout = Instance.new("UIListLayout");
 PlayerListLayout.Padding = UDim.new(0, 4);
 PlayerListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center;
 PlayerListLayout.Parent = PlayerScroll;
-local function rebuildPlayerListGUI()
+local function buildCrewListGUI()
+	for _, child in pairs(PlayerScroll:GetChildren()) do
+		if child:IsA("Frame") then
+			child:Destroy();
+		end
+	end
+	local seen = {};
+	local ids = {};
+	local crewCounts = {};
+	local crewMembers = {};
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if (plr ~= LocalPlayer) then
+			local id = getPlayerCrewId(plr);
+			if (id ~= nil) then
+				crewCounts[id] = (crewCounts[id] or 0) + 1;
+				crewMembers[id] = crewMembers[id] or {};
+				table.insert(crewMembers[id], plr);
+				if (not seen[id]) then
+					seen[id] = true;
+					table.insert(ids, id);
+				end
+			end
+		end
+	end
+	table.sort(ids, function(a, b)
+		local na = crewNameCache[a] or a;
+		local nb = crewNameCache[b] or b;
+		return na:lower() < nb:lower();
+	end);
+	local pending = {};
+	for _, id in ipairs(ids) do
+		if (crewNameCache[id] == nil) then
+			table.insert(pending, id);
+		end
+	end
+	fetchCrewNames(pending);
+	local rowN = 0;
+	local function makeModeButton(row, fadeTargets, modeState, x, mode, label)
+		local bg = Instance.new("Frame");
+		bg.Size = UDim2.new(0, 105, 0, 30);
+		bg.Position = UDim2.new(0, x, 0.5, -15);
+		bg.BackgroundTransparency = 1;
+		bg.BorderSizePixel = 0;
+		bg.Parent = row;
+		applyCorner(bg, 6);
+		applyStroke(bg, theme.strokeSoft, 1, 0.5);
+		table.insert(fadeTargets, { inst = bg, prop = "BackgroundTransparency", to = 0 });
+		if (mode == MODE_TRIGGER) then
+			makeGradient(theme.accentSoft, theme.accentWarm, 90).Parent = bg;
+		elseif (mode == MODE_AUTOSHOOT) then
+			makeGradient(theme.dangerSoft, theme.dangerWarm, 90).Parent = bg;
+		else
+			bg.BackgroundColor3 = MODE_COLORS[MODE_OFF + 1];
+		end
+		local hover = Instance.new("Frame");
+		hover.BackgroundColor3 = Color3.new(1, 1, 1);
+		hover.BackgroundTransparency = 1;
+		hover.Size = UDim2.fromScale(1, 1);
+		hover.Parent = bg;
+		applyCorner(hover, 6);
+		local btn = Instance.new("TextButton");
+		btn.Size = UDim2.new(0, 105, 0, 30);
+		btn.Position = UDim2.new(0, x, 0.5, -15);
+		btn.BackgroundTransparency = 1;
+		btn.AutoButtonColor = false;
+		btn.BorderSizePixel = 0;
+		btn.Text = label;
+		btn.TextColor3 = Color3.new(1, 1, 1);
+		btn.Font = Enum.Font.GothamMedium;
+		btn.TextSize = 10;
+		btn.Parent = row;
+		local state = { hover = hover, active = false };
+		modeState[btn] = state;
+		btn.TextTransparency = 1;
+		table.insert(fadeTargets, { inst = btn, prop = "TextTransparency", to = 0 });
+		local bgScale = Instance.new("UIScale");
+		bgScale.Scale = 1;
+		bgScale.Parent = bg;
+		local btnScale = Instance.new("UIScale");
+		btnScale.Scale = 1;
+		btnScale.Parent = btn;
+		local function pressStart()
+			tween(bgScale, 0.08, { Scale = 0.9 }, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
+			tween(btnScale, 0.08, { Scale = 0.9 }, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
+		end
+		local function pressEnd()
+			tween(bgScale, 0.15, { Scale = 1 }, Enum.EasingStyle.Back, Enum.EasingDirection.Out);
+			tween(btnScale, 0.15, { Scale = 1 }, Enum.EasingStyle.Back, Enum.EasingDirection.Out);
+		end
+		btn.MouseButton1Down:Connect(pressStart);
+		btn.MouseButton1Up:Connect(pressEnd);
+		btn.MouseLeave:Connect(pressEnd);
+		btn.MouseEnter:Connect(function()
+			hover.BackgroundTransparency = (state.active and 1) or 0.78;
+		end);
+		btn.MouseLeave:Connect(function()
+			hover.BackgroundTransparency = 1;
+		end);
+		return btn;
+	end
+	for _, id in ipairs(ids) do
+		local cached = crewNameCache[id];
+		local crewName = (type(cached) == "string" and cached) or (cached == false and ("Crew " .. tostring(id))) or "loading...";
+		local row = Instance.new("Frame");
+		row.Size = UDim2.new(1, 0, 0, 42);
+		row.BackgroundColor3 = theme.surfaceSoft;
+		row.BorderSizePixel = 0;
+		row.Parent = PlayerScroll;
+		applyCorner(row, 6);
+		applyStroke(row, theme.strokeSoft, 1, 0.5);
+		local rowStroke = row:FindFirstChildOfClass("UIStroke");
+		local rowEnterScale = Instance.new("UIScale");
+		rowEnterScale.Scale = 0.96;
+		rowEnterScale.Parent = row;
+		local fadeTargets = {
+			{ inst = row, prop = "BackgroundTransparency", to = 0 },
+			{ inst = rowStroke, prop = "Transparency", to = 0.5 },
+		};
+		row.BackgroundTransparency = 1;
+		if rowStroke then
+			rowStroke.Transparency = 1;
+		end
+		row.MouseEnter:Connect(function()
+			TweenService:Create(row, TweenInfo.new(0.12), { BackgroundColor3 = theme.surfaceElevated }):Play();
+		end);
+		row.MouseLeave:Connect(function()
+			TweenService:Create(row, TweenInfo.new(0.18), { BackgroundColor3 = theme.surfaceSoft }):Play();
+		end);
+		local nameWrap = Instance.new("Frame");
+		nameWrap.BackgroundTransparency = 1;
+		nameWrap.Size = UDim2.new(0, 180, 1, 0);
+		nameWrap.Position = UDim2.new(0, 12, 0, 0);
+		nameWrap.Parent = row;
+		local nameLabel = Instance.new("TextLabel");
+		nameLabel.Size = UDim2.new(1, 0, 1, 0);
+		nameLabel.Position = UDim2.new(0, 0, 0, 0);
+		nameLabel.BackgroundTransparency = 1;
+		nameLabel.Text = crewName;
+		nameLabel.TextColor3 = MODE_COLORS[MODE_OFF + 1];
+		nameLabel.Font = Enum.Font.GothamMedium;
+		nameLabel.TextSize = 12;
+		nameLabel.TextXAlignment = Enum.TextXAlignment.Left;
+		nameLabel.TextYAlignment = Enum.TextYAlignment.Center;
+		nameLabel.TextTruncate = Enum.TextTruncate.AtEnd;
+		nameLabel.TextTransparency = 1;
+		nameLabel.TextStrokeTransparency = 1;
+		nameLabel.Parent = nameWrap;
+		table.insert(fadeTargets, { inst = nameLabel, prop = "TextTransparency", to = 0 });
+		local nameGradient = makeGradient(theme.accentSoft, theme.accentWarm, 90);
+		nameGradient.Enabled = false;
+		nameGradient.Parent = nameLabel;
+		local modeState = {};
+		local neutralBtn = makeModeButton(row, fadeTargets, modeState, 200, MODE_OFF, "NEUTRAL");
+		local trigBtn = makeModeButton(row, fadeTargets, modeState, 315, MODE_TRIGGER, "TRIGGER");
+		local function crewHasMode(mode)
+			for _, plr in ipairs(Players:GetPlayers()) do
+				if (plr ~= LocalPlayer) and (getPlayerCrewId(plr) == id) then
+					if (GetPlayerMode(plr.Name) == mode) then
+						return true;
+					end
+				end
+			end
+			return false;
+		end
+		local function paintCrewMode()
+			local offActive = crewHasMode(MODE_OFF);
+			local trigActive = crewHasMode(MODE_TRIGGER);
+			modeState[neutralBtn].active = offActive;
+			modeState[trigBtn].active = trigActive;
+			modeState[neutralBtn].hover.BackgroundTransparency = 1;
+			modeState[trigBtn].hover.BackgroundTransparency = 1;
+			neutralBtn.Text = "NEUTRAL";
+			trigBtn.Text = "TRIGGER";
+			if (trigActive) then
+				nameGradient.Enabled = true;
+				nameLabel.TextColor3 = Color3.new(1, 1, 1);
+				nameGradient.Color = ColorSequence.new({
+					ColorSequenceKeypoint.new(0, theme.accentSoft),
+					ColorSequenceKeypoint.new(1, theme.accentWarm),
+				});
+			else
+				nameGradient.Enabled = false;
+				nameLabel.TextColor3 = MODE_COLORS[MODE_OFF + 1];
+			end
+		end
+		paintCrewMode();
+		neutralBtn.MouseButton1Click:Connect(function()
+			applyCrewMode(id, MODE_OFF);
+			paintCrewMode();
+		end);
+		trigBtn.MouseButton1Click:Connect(function()
+			applyCrewMode(id, MODE_TRIGGER);
+			paintCrewMode();
+		end);
+		rowN = rowN + 1;
+		rowEnterScale.Scale = 1;
+		for _, t in ipairs(fadeTargets) do
+			if t.inst and t.inst.Parent then
+				t.inst[t.prop] = t.to;
+			end
+		end
+	end
+	rowN = 0;
+end
+rebuildPlayerListGUI = function()
+	if showCrewList then
+		buildCrewListGUI();
+		return;
+	end
 	for _, child in pairs(PlayerScroll:GetChildren()) do
 		if child:IsA("Frame") then
 			child:Destroy();
@@ -5190,7 +6667,7 @@ TriggerAllBtn.MouseButton1Click:Connect(function()
 	end
 	rebuildPlayerListGUI();
 end);
-Players.PlayerAdded:Connect(function(player)
+connectLive(Players.PlayerAdded, function(player)
 	local restored = savedTargetModes[player.UserId];
 	if (restored ~= nil) then
 		SetPlayerMode(player.Name, restored);
@@ -5201,7 +6678,7 @@ Players.PlayerAdded:Connect(function(player)
 	end
 	rebuildPlayerListGUI();
 end);
-Players.PlayerRemoving:Connect(function(player)
+connectLive(Players.PlayerRemoving, function(player)
 	local leavingMode = Config.Targeting.Selected[player.Name];
 	if (leavingMode ~= nil) then
 		savedTargetModes[player.UserId] = leavingMode;
@@ -5210,6 +6687,22 @@ Players.PlayerRemoving:Connect(function(player)
 	rebuildPlayerListGUI();
 end);
 rebuildPlayerListGUI();
+task.spawn(function()
+	local seenIds = {};
+	local pending = {};
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if (plr ~= LocalPlayer) then
+			local id = getPlayerCrewId(plr);
+			if (id and (not seenIds[id])) then
+				seenIds[id] = true;
+				if (crewNameCache[id] == nil) then
+					table.insert(pending, id);
+				end
+			end
+		end
+	end
+	fetchCrewNames(pending);
+end);
 -- ===== ESP: Drawing-based (ported from backup.lua) =====
 do
     local espObjects = {} -- player -> {box, name, hp, conn}
@@ -5262,14 +6755,20 @@ do
         setDrawingVisible(box, false)
         setDrawingVisible(name, false)
         setDrawingVisible(hp, false)
-        box.Filled = false
-        box.Thickness = 1
-        name.Center = true
-        name.Outline = true
-        name.Font = Enum.Font.GothamSemibold
-        hp.Center = true
-        hp.Outline = true
-        hp.Font = Enum.Font.GothamSemibold
+        pcall(function() box.Filled = false end)
+        pcall(function() box.Thickness = 1 end)
+        pcall(function() name.Center = true end)
+        pcall(function() name.Outline = true end)
+        -- Font — главный источник сбоев между экзекуторами: часть (Real) хочет
+        -- Enum.Font, часть (potassium) — свой DrawingFont (Drawing.Fonts.UI и
+        -- т.п.), не совместимые типы. Раньше это падало без pcall и рвало
+        -- ВЕСЬ createEspFor на первом же игроке — ESP не работал вообще ни для
+        -- кого. Пробуем нативный DrawingFont, иначе Enum.Font, любая неудача —
+        -- молча пропускаем (шрифт не критичен, дефолтный тоже читаем).
+        pcall(function() name.Font = (Drawing.Fonts and Drawing.Fonts.UI) or Enum.Font.GothamSemibold end)
+        pcall(function() hp.Center = true end)
+        pcall(function() hp.Outline = true end)
+        pcall(function() hp.Font = (Drawing.Fonts and Drawing.Fonts.UI) or Enum.Font.GothamSemibold end)
 
         local conn
         conn = RunService.RenderStepped:Connect(function()
@@ -5288,12 +6787,14 @@ do
                 setDrawingVisible(hp, false)
                 return
             end
-            local isTarget = Config.TriggerAllMode or (GetPlayerMode(player.Name) ~= MODE_OFF)
-            if not isTarget then
-                setDrawingVisible(box, false)
-                setDrawingVisible(name, false)
-                setDrawingVisible(hp, false)
-                return
+            if Config.Esp.OnlyTarget then
+                local isTarget = Config.TriggerAllMode or (GetPlayerMode(player.Name) ~= MODE_OFF)
+                if not isTarget then
+                    setDrawingVisible(box, false)
+                    setDrawingVisible(name, false)
+                    setDrawingVisible(hp, false)
+                    return
+                end
             end
             local root = player.Character:FindFirstChild('HumanoidRootPart')
             local head = player.Character:FindFirstChild('Head')
@@ -5319,7 +6820,7 @@ do
             local boxColor = Config.Esp.BoxColor or healthColor
             local nameColor = Config.Esp.NameColor or healthColor
             local hpColor = Config.Esp.HpColor or healthColor
-            if Config.Esp.Boxes and not Config.Esp.Hitbox then
+            if Config.Esp.Boxes then
                 setDrawingVisible(box, true)
                 box.Color = boxColor
                 box.Size = Vector2.new(boxWidth, boxHeight)
@@ -5347,10 +6848,10 @@ do
             end
         end)
         espObjects[player] = { box = box, name = name, hp = hp, conn = conn }
-        player.AncestryChanged:Connect(function()
+        connectLive(player.AncestryChanged, function()
             if not player.Parent then removeEspFor(player) end
         end)
-        Players.PlayerRemoving:Connect(function(pl)
+        connectLive(Players.PlayerRemoving, function(pl)
             if pl == player then removeEspFor(pl) end
         end)
     end
@@ -5500,7 +7001,7 @@ do
 		if not cam then return; end
 		local btGetPos = SAEnv.emolineBtGetPosition;
 		if not btGetPos then return; end
-		local enabled = Backtrack.Enabled and Backtrack.ShowHitbox and (not Config.Esp.Hitbox);
+		local enabled = Backtrack.Enabled and Backtrack.ShowHitbox;
 		for _, p in ipairs(Players:GetPlayers()) do
 			if not ((p == LocalPlayer) or (GetPlayerMode(p.Name) ~= MODE_TRIGGER) or (not enabled) or (not isAlive(p)) or isKnockedOut(p)) then
 				local c = p.Character;
@@ -5586,164 +7087,14 @@ line.From = screenPts[edge[1]];
 		end,
 		cleanup = btCleanup,
 	};
-	Players.PlayerRemoving:Connect(function(player)
+	connectLive(Players.PlayerRemoving, function(player)
 		btRemoveSet(player);
 	end);
 	_G._emolineBtVisualCleanup = btCleanup;
 end
--- ===== Show Hitbox: wireframe (Drawing-based) =====
-do
-	local genv = (getgenv and getgenv()) or _G;
-	local regKey = "emolineHitboxVisualReg";
-	if genv[regKey] and type(genv[regKey].teardown) == "function" then
-		pcall(genv[regKey].teardown);
-	end
-	local hitboxLines = {};
-	local HITBOX_COLOR = Color3.fromRGB(255, 255, 255);
-	local function getHitboxColor()
-		local c = Config.Esp.HitboxColor;
-		if (typeof(c) == "Color3") then return c; end
-		return Color3.fromRGB(255, 255, 255);
-	end
-	local function getOrCreateHitboxLines(plr)
-		if hitboxLines[plr] then return hitboxLines[plr]; end
-		local lines = {};
-		for i = 1, 12 do
-			local ok, line = pcall(function() return Drawing.new("Line"); end)
-			if ok and line then
-				line.Thickness = 1.5;
-				line.Color = getHitboxColor();
-				line.Transparency = 1;
-				line.Visible = false;
-				lines[i] = line;
-			end
-		end
-		hitboxLines[plr] = lines;
-		return lines;
-	end
-	local hitboxEdges = {
-		{1,2},{2,3},{3,4},{4,1},
-		{5,6},{6,7},{7,8},{8,5},
-		{1,5},{2,6},{3,7},{4,8},
-	};
-	local function getCharCorners(char)
-		local hrp = char:FindFirstChild("HumanoidRootPart");
-		if not hrp then return nil; end
-		local cf = hrp.CFrame;
-		if Backtrack.Enabled and Backtrack.ShowHitbox then
-			local btGetPos = SAEnv.emolineBtGetPosition;
-			if btGetPos then
-				local pos = btGetPos(hrp, Backtrack.DelayMs);
-				if pos then
-					cf = cf - cf.Position + pos;
-				end
-			end
-		end
-		local halfW, halfH, halfD = 4, 4, 2;
-		return {
-			(cf * CFrame.new( halfW,  halfH,  halfD)).Position,
-			(cf * CFrame.new(-halfW,  halfH,  halfD)).Position,
-			(cf * CFrame.new(-halfW, -halfH,  halfD)).Position,
-			(cf * CFrame.new( halfW, -halfH,  halfD)).Position,
-			(cf * CFrame.new( halfW,  halfH, -halfD)).Position,
-			(cf * CFrame.new(-halfW,  halfH, -halfD)).Position,
-			(cf * CFrame.new(-halfW, -halfH, -halfD)).Position,
-			(cf * CFrame.new( halfW, -halfH, -halfD)).Position,
-		};
-	end
-	local hitboxConn = connectLive(RunService.RenderStepped, function()
-		if not Config.Esp.Hitbox then
-			for plr, lines in pairs(hitboxLines) do
-				for _, line in ipairs(lines) do
-					pcall(function() line.Visible = false; end);
-				end
-			end
-			return;
-		end
-		local cam = workspace.CurrentCamera;
-		if not cam then return; end
-		for _, plr in pairs(Players:GetPlayers()) do
-			if plr == LocalPlayer then
-				if hitboxLines[plr] then
-					for _, line in ipairs(hitboxLines[plr]) do pcall(function() line.Visible = false; end); end
-				end
-				continue;
-			end
-			local isTarget = Config.TriggerAllMode or (GetPlayerMode(plr.Name) ~= MODE_OFF);
-			local char = plr.Character;
-			if (not isTarget) or (not char) or (not isAlive(plr)) or isKnockedOut(plr) then
-				if hitboxLines[plr] then
-					for _, line in ipairs(hitboxLines[plr]) do pcall(function() line.Visible = false; end); end
-				end
-				continue;
-			end
-			local corners = getCharCorners(char);
-			if not corners then
-				if hitboxLines[plr] then
-					for _, line in ipairs(hitboxLines[plr]) do pcall(function() line.Visible = false; end); end
-				end
-				continue;
-			end
-			local screenPts = {};
-			local allOnScreen = true;
-			for _, p3 in ipairs(corners) do
-				local sp = cam:WorldToViewportPoint(p3);
-				if sp.Z < 0.1 then allOnScreen = false; end
-				table.insert(screenPts, Vector2.new(sp.X, sp.Y));
-			end
-			local lines = getOrCreateHitboxLines(plr);
-			if not allOnScreen then
-				for _, line in ipairs(lines) do
-					pcall(function() line.Visible = false; end);
-				end
-				continue;
-			end
-			for idx, edge in ipairs(hitboxEdges) do
-				local a, b = screenPts[edge[1]], screenPts[edge[2]];
-				local line = lines[idx];
-				if line then
-					line.From = a;
-					line.To = b;
-					line.Color = getHitboxColor();
-					line.Visible = true;
-				end
-			end
-		end
-		for plr, lines in pairs(hitboxLines) do
-			if (not plr) or (not plr.Parent) then
-				for _, line in ipairs(lines) do
-					pcall(function() line:Remove(); end);
-				end
-				hitboxLines[plr] = nil;
-			end
-		end
-	end);
-	Players.PlayerRemoving:Connect(function(player)
-		if hitboxLines[player] then
-			for _, line in ipairs(hitboxLines[player]) do
-				pcall(function() line:Remove(); end);
-			end
-			hitboxLines[player] = nil;
-		end
-	end);
-	_G._emolineHitboxCleanup = function()
-		for plr, lines in pairs(hitboxLines) do
-			for _, line in ipairs(lines) do
-				pcall(function() line:Remove(); end);
-			end
-			hitboxLines[plr] = nil;
-		end
-	end
-	genv[regKey] = {
-		teardown = function()
-			if _G._emolineHitboxCleanup then pcall(_G._emolineHitboxCleanup); end
-			if hitboxConn and hitboxConn.Disconnect then pcall(function() hitboxConn:Disconnect(); end); end
-			genv[regKey] = nil;
-		end,
-		cleanup = _G._emolineHitboxCleanup,
-	};
-end
-LocalPlayer.CharacterAdded:Connect(function()
+-- Show Hitbox (ESP) убран — дублировал Combat > Hitbox Expander, который теперь
+-- сам по себе чисто визуальный оверлей той же функции.
+connectLive(LocalPlayer.CharacterAdded, function()
 	task.wait(1);
 end);
 cfgLoadConfig();
@@ -5772,14 +7123,15 @@ SpecFrame.Name = "SpecFrame";
 SpecFrame.Size = UDim2.new(0, 260, 0, 54);
 SpecFrame.Position = UDim2.new(0, 20, 0, 20);
 SpecFrame.BackgroundColor3 = theme.surface;
+SpecFrame.BackgroundTransparency = 0.22;
 SpecFrame.BorderSizePixel = 0;
 SpecFrame.Parent = SpecGui;
 applyCorner(SpecFrame, 12);
 
 local SpecStroke = Instance.new("UIStroke");
-SpecStroke.Color = theme.strokeSoft;
+SpecStroke.Color = theme.glassStroke;
 SpecStroke.Thickness = 1;
-SpecStroke.Transparency = 0.5;
+SpecStroke.Transparency = 0.88;
 SpecStroke.Parent = SpecFrame;
 
 local SpecTitle = Instance.new("TextLabel");
@@ -5968,6 +7320,10 @@ local state = {
 	telemStreaming = false,
 	remoteHit = false,
 };
+-- true только если Silent Aim выключил ИМЕННО Panic Mode (а не игрок руками
+-- до начала спека) - чтобы на выходе админа восстанавливать только то, что
+-- сами же погасили, а не насильно врубать выключенный пользователем сайлент.
+local panicDisabledSilentAim = false;
 
 local function refreshUi()
 	if state.active then
@@ -5981,11 +7337,33 @@ end
 
 local function setActive(active, spectator, reason)
 	if active then
+		-- Panic Mode: гасим Rage-функции (Silent Aim) по ФРОНТУ обнаружения
+		-- спектейта (false->true), не на каждый повторный confirm() пока
+		-- админ продолжает смотреть - иначе onChange дёргался бы каждый кадр
+		-- (silentAimToggleSetter всегда зовёт onChange, даже без смены state)
+		-- и спамил cfgScheduleSave(). FOV Trigger гасится автоматически вслед
+		-- за Silent Aim (сам требует Config.SilentAim.Enabled).
+		if (not state.active) and Config.PanicMode and Config.PanicMode.Enabled then
+			if silentAimToggleSetter and Config.SilentAim.Enabled then
+				panicDisabledSilentAim = true;
+				silentAimToggleSetter(false);
+			end
+		end
 		state.active = true;
 		state.spectator = spectator;
 		state.reason = reason or state.reason;
 		state.lastConfirm = os.clock();
 	else
+		-- Админ перестал смотреть - возвращаем сайлент обратно, но только если
+		-- это именно Panic Mode его выключил и игрок с тех пор не включил его
+		-- руками сам (тогда Config.SilentAim.Enabled уже true и флаг ни на что
+		-- не влияет).
+		if panicDisabledSilentAim and (not Config.SilentAim.Enabled) then
+			if silentAimToggleSetter then
+				silentAimToggleSetter(true);
+			end
+		end
+		panicDisabledSilentAim = false;
 		state.active = false;
 		state.spectator = nil;
 		state.reason = reason or "idle";
@@ -6104,7 +7482,12 @@ task.spawn(function()
 	end
 
 	task.spawn(function()
+		-- БЫЛО task.wait(0.35) - детект "админ заспектил" через adminLooksGhosted
+		-- (пропажа чара/HRP) ловился с задержкой до 350мс, визуально "не сразу".
+		-- RenderStepped - проверка каждый кадр (~16мс), почти мгновенно; сама
+		-- проверка дешёвая (несколько админов, rank из кэша на 60с).
 		while SpecGui and SpecGui.Parent and not SAEnv.emolineUnloaded do
+			RunService.RenderStepped:Wait();
 			local attr = AdminRemotes:GetAttribute("SpecActive") == true;
 			state.specActiveAttr = attr;
 
@@ -6137,9 +7520,8 @@ task.spawn(function()
 			end
 
 			refreshUi();
-			task.wait(0.35);
 		end
 	end);
 end);
 end
-end
+end)();
