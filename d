@@ -1470,7 +1470,17 @@ local function setupSilentHook()
 			local realShoot = GunModule.shoot;
 			SAEnv.emolineOrigShoot = realShoot;
 			GunModule.shoot = function(p1)
-				local a, h, n, col = realShoot(p1);
+				-- realShoot - НЕМОДИФИЦИРОВАННАЯ функция самой игры, p1 уходит в неё
+				-- как есть. Живая ошибка ("GunModule:735: table index is nil") падала
+				-- ВНУТРИ игровой логики, не в нашем коде - но раз мы перехватываем
+				-- shoot глобально, необработанный error там рвал весь кадр через наш
+				-- хук. pcall не лечит причину в самой игре (её код мы не меняем), но
+				-- не даёт ей ронять остальной пайплайн - на ошибку просто считаем
+				-- выстрел промахом и идём дальше.
+				local ok, a, h, n, col = pcall(realShoot, p1);
+				if not ok then
+					return nil, nil, nil, nil;
+				end
 				if p1 and p1.Shooter == LocalPlayer.Character then
 					-- Hitbox Expander: отдельный toggle (Config.Combat.HitboxExpander.
 					-- Enabled), не завязан ни на Backtrack, ни на Silent Aim/Trigger
@@ -2620,14 +2630,17 @@ local function createToggle(parent, caption, defaultValue, onChange, cfgKey)
 		end
 	end
 	addPressAnimation(switch);
+	local linkedKb;
+	local setter;
+	-- Клик по самому свитчу должен идти через setter(), а не дублировать смену state
+	-- напрямую - иначе linkedKb.__toggled/__applied (на них держится GetState() для
+	-- плавающего окна кейбиндов) не обновляются при ручном клике, и список показывает
+	-- застрявшее старое значение, пока функция реально уже выключена кликом.
 	switch.MouseButton1Click:Connect(function()
-		state = not state;
-		render();
-		onChange(state);
+		setter(not state);
 	end);
 	render();
-	local linkedKb;
-	local function setter(newState)
+	setter = function(newState)
 		local ns = (newState and true) or false;
 		if (ns ~= state) then
 			state = ns;
