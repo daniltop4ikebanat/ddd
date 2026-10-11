@@ -322,7 +322,10 @@ end
 local LOCAL_WHITELIST = {
 	"starvation38147",
 	"cyphikshop3",
-	"thebindingofisaac547", -- тестовый аккаунт для диагностики инжекта через potassium
+	"612072",
+	"thebindingofisaac547",
+    "Hronk5497",
+    "KMSGWjCBta", -- тестовый аккаунт для диагностики инжекта через potassium
 };
 local allowedUsers = {};
 do
@@ -810,7 +813,10 @@ do
 			if btConn then btConn:Disconnect(); btConn = nil; end
 			return;
 		end
-		if not Backtrack.Enabled then
+		-- ShowHitbox сам по себе должен уже писать историю - иначе включённый
+		-- "Show Backtrack Hitbox" без отдельно включённого "Enable Backtrack"
+		-- рисует пустоту (нечего рисовать, история никогда не копилась).
+		if not (Backtrack.Enabled or Backtrack.ShowHitbox) then
 			return;
 		end
 		btRecord();
@@ -6714,7 +6720,19 @@ task.spawn(function()
 	fetchCrewNames(pending);
 end);
 -- ===== ESP: Drawing-based (ported from backup.lua) =====
+-- Повторный запуск скрипта (execute_file поверх уже работающего) раньше НЕ гасил
+-- предыдущий цикл: espPlayerAddedConn и per-player RenderStepped внутри createEspFor
+-- были подключены напрямую через :Connect, а не connectLive, и ничего не регало их
+-- teardown при новом запуске (в отличие от Hitbox Expander/Backtrack Visual, у которых
+-- уже был genv-registry teardown-on-reinit). После пары реинжектов копились старые
+-- PlayerAdded-хендлеры и ESP-луты от каждого прошлого запуска, конфликтующие друг с
+-- другом/рисующие в уже мёртвые Drawing-объекты - ESP выглядел как "вообще не включается".
 do
+    local genv = (getgenv and getgenv()) or _G;
+    local regKey = "emolineEspReg";
+    if genv[regKey] and type(genv[regKey].teardown) == "function" then
+        pcall(genv[regKey].teardown);
+    end
     local espObjects = {} -- player -> {box, name, hp, conn}
 
     local function canUseDrawingObject(obj)
@@ -6781,7 +6799,7 @@ do
         pcall(function() hp.Font = (Drawing.Fonts and Drawing.Fonts.UI) or Enum.Font.GothamSemibold end)
 
         local conn
-        conn = RunService.RenderStepped:Connect(function()
+        conn = connectLive(RunService.RenderStepped, function()
             if SAEnv.emolineUnloaded or not Config.Esp.Enabled or not player or not player.Character or player == Players.LocalPlayer then
                 setDrawingVisible(box, false)
                 setDrawingVisible(name, false)
@@ -6867,7 +6885,7 @@ do
     end
 
     local espPlayerAddedConn
-    espPlayerAddedConn = Players.PlayerAdded:Connect(function(p)
+    espPlayerAddedConn = connectLive(Players.PlayerAdded, function(p)
         task.wait(0.05)
         if SAEnv.emolineUnloaded then return end
         if Config.Esp.Enabled then createEspFor(p) end
@@ -6889,7 +6907,7 @@ do
         end
     end
     _G._emolineEspEnsureAll = espEnsureAll
-    _G._emolineEspCleanup = function()
+    local function espCleanup()
         if espPlayerAddedConn then
             pcall(function() espPlayerAddedConn:Disconnect(); end)
             espPlayerAddedConn = nil
@@ -6898,6 +6916,14 @@ do
             removeEspFor(p)
         end
     end
+    _G._emolineEspCleanup = espCleanup
+    genv[regKey] = {
+        teardown = function()
+            espCleanup();
+            genv[regKey] = nil;
+        end,
+        cleanup = espCleanup,
+    };
 end
 -- ===== Backtrack hitbox visual (3D через Drawing Quad+Line) =====
 -- Полупрозрачный заполненный куб (6 граней Quad + 12 рёбер Line) на ОТКАТАННОЙ
@@ -6944,7 +6970,12 @@ do
 			if ok and line then
 				line.Thickness = 1.5;
 				line.Color = BT_COLOR;
-				line.Transparency = 1;
+				-- Transparency=1 у Drawing-линии значит ПОЛНОСТЬЮ невидимая (не как у
+				-- Instance.Transparency - тут 0 = сплошная, 1 = прозрачная), а рендер-луп
+				-- ниже это значение больше никогда не трогает - только Color/From/To/
+				-- Visible. С единицей тут грани бокса были невидимы навсегда, даже когда
+				-- Visible=true и позиции верные - виден был только полупрозрачный Quad-фон.
+				line.Transparency = 0;
 				line.Visible = false;
 				lines[i] = line;
 			else
@@ -7011,7 +7042,7 @@ do
 		if not cam then return; end
 		local btGetPos = SAEnv.emolineBtGetPosition;
 		if not btGetPos then return; end
-		local enabled = Backtrack.Enabled and Backtrack.ShowHitbox;
+		local enabled = Backtrack.ShowHitbox;
 		for _, p in ipairs(Players:GetPlayers()) do
 			if not ((p == LocalPlayer) or (GetPlayerMode(p.Name) ~= MODE_TRIGGER) or (not enabled) or (not isAlive(p)) or isKnockedOut(p)) then
 				local c = p.Character;
