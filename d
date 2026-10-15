@@ -322,9 +322,7 @@ end
 local LOCAL_WHITELIST = {
 	"starvation38147",
 	"cyphikshop3",
-	"612072",
 	"thebindingofisaac547",
-    "Hronk5497",
     "KMSGWjCBta", -- тестовый аккаунт для диагностики инжекта через potassium
 };
 local allowedUsers = {};
