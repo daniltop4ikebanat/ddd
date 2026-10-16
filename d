@@ -154,7 +154,6 @@ local function connectLive(signal, fn)
 	table.insert(liveConnections, conn);
 	return conn;
 end
-local PASTE_RAW_URL = "https://raw.githubusercontent.com/daniltop4ikebanat/ddd/refs/heads/main/white";
 -- ===== Discord webhook: лог инжектов =====
 -- ВСТАВЬ свой webhook URL (Discord: настройки канала -> Интеграция -> Вебхуки -> Скопировать URL)
 -- Ретраи: если экзекутор блокирует HTTP в момент загрузки, сообщение уйдёт
@@ -216,7 +215,7 @@ local function webhook_fallback_post(url, body)
 	return ok, (ok and "PostAsync ok") or tostring(err);
 end
 local webhook_inflight = nil; -- { title, color, attempt }
-local function send_webhook_embed(title, color)
+local function send_webhook_embed(title, color, keyUsed)
 	pcall(function()
 		if (type(DISCORD_WEBHOOK_URL) ~= "string") or (not DISCORD_WEBHOOK_URL:match("^https://")) then return; end
 		local attempt = (webhook_inflight and (webhook_inflight.attempt + 1)) or 1;
@@ -247,6 +246,7 @@ local function send_webhook_embed(title, color)
 					{ name = "Time (MSK)"; value = os.date("!%Y-%m-%d %H:%M:%S", os.time() + (3 * 3600)); inline = true };
 					{ name = "Game"; value = string.format("%s (%d)", tostring(gameName), game.PlaceId); inline = false };
 					{ name = "HWID"; value = hwid; inline = false };
+					{ name = "Key"; value = tostring(keyUsed or "N/A"); inline = false };
 				};
 				timestamp = os.date("!%Y-%m-%dT%H:%M:%S", os.time() + (3 * 3600)) .. "+03:00";
 			} };
@@ -319,82 +319,424 @@ local function fetch_raw(url)
 	end
 	return nil;
 end
-local LOCAL_WHITELIST = {
-	"starvation38147",
-	"cyphikshop3",
-	"thebindingofisaac547",
-    "KMSGWjCBta", -- тестовый аккаунт для диагностики инжекта через potassium
-};
-local allowedUsers = {};
-do
-	local raw = fetch_raw(PASTE_RAW_URL);
-	if raw then
-		local loader = loadstring or ((getgenv and getgenv()) or _G).load;
-		local ok, chunk = pcall(loader, raw);
-		if (ok and (type(chunk) == "function")) then
-			local ok2, result = pcall(chunk);
-			if (ok2 and (type(result) == "table")) then
-				allowedUsers = result;
-			end
-		end
-		if ((type(allowedUsers) ~= "table") or (#allowedUsers == 0)) then
-			allowedUsers = {};
-			for line in raw:gmatch("[^\r\n]+") do
-				line = line:gsub("^%s+", ""):gsub("%s+$", "");
-				if (line ~= "") then
-					table.insert(allowedUsers, line);
+-- ===== Key system (замена вайтлиста по никам): ключ+HWID проверяются живым
+-- запросом на Cloudflare Worker (он же шлёт красивый лог в тг и пишет ленту
+-- активности в Mini App) - никакого локального/GitHub-списка ключей больше
+-- нет, Worker - единственный источник правды, привязку ключ->HWID он же
+-- хранит и валидирует на каждый инжект.
+local CHECK_URL = "https://keys.lutka-abuz.workers.dev/check";
+local KEY_SAVE_PATH = "emoline_scriptkey.txt";
+local function urlEncode(s)
+	s = tostring(s or "");
+	s = s:gsub("([^%w%-%_%.%~])", function(c)
+		return string.format("%%%02X", string.byte(c));
+	end);
+	return s;
+end
+local function getHwid()
+	local hwid = nil;
+	pcall(function()
+		if gethwid then hwid = tostring(gethwid()); end
+	end);
+	if (not hwid) or (hwid == "") then
+		pcall(function()
+			hwid = tostring(game:GetService("RbxAnalyticsService"):GetClientId());
+		end);
+	end
+	return hwid or "N/A";
+end
+local function getExecutorName()
+	local executor = "Unknown";
+	pcall(function()
+		if identifyexecutor then executor = identifyexecutor();
+		elseif getexecutorname then executor = getexecutorname(); end
+	end);
+	return executor;
+end
+local function getGameName()
+	local gameName = "Unknown";
+	pcall(function()
+		gameName = game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId).Name;
+	end);
+	return gameName;
+end
+-- Один живой запрос на /check: сервер сам решает (ключ валиден? первый ли это
+-- hwid для ключа? совпадает ли с уже привязанным?) и сам же логирует
+-- событие+шлёт тг-уведомление - клиенту останется только ok/not ok.
+local function remoteCheckKey(key, playerName, hwid, executor, gameName)
+	local url = CHECK_URL
+		.. "?key=" .. urlEncode(key)
+		.. "&hwid=" .. urlEncode(hwid)
+		.. "&username=" .. urlEncode(playerName)
+		.. "&executor=" .. urlEncode(executor)
+		.. "&game=" .. urlEncode(gameName);
+	local raw = fetch_raw(url);
+	if not raw then
+		return false, "no response from server";
+	end
+	local HttpService = game:GetService("HttpService");
+	local ok, decoded = pcall(function() return HttpService:JSONDecode(raw); end);
+	if (not ok) or (type(decoded) ~= "table") then
+		return false, "bad response from server";
+	end
+	return (decoded.ok == true), tostring(decoded.reason or (decoded.ok and "ok" or "rejected"));
+end
+local function readSavedKey()
+	local ok, exists = pcall(isfile, KEY_SAVE_PATH);
+	if not (ok and exists) then
+		return nil;
+	end
+	local ok2, content = pcall(readfile, KEY_SAVE_PATH);
+	if (not ok2) or (type(content) ~= "string") then
+		return nil;
+	end
+	content = content:gsub("^%s+", ""):gsub("%s+$", "");
+	if (content == "") then
+		return nil;
+	end
+	return content;
+end
+local function saveKey(k)
+	pcall(writefile, KEY_SAVE_PATH, k);
+end
+-- Блокирующий промпт на ввод ключа: простой ScreenGui, без зависимостей от
+-- theme/Config (они объявляются ниже в файле дальше по скрипту) - этот экран
+-- должен суметь показаться ДО того, как что-либо ещё инициализировано.
+-- Промпт ключа рисуется ДО того, как ниже по файлу объявляются theme/
+-- applyCorner/applyStroke/makeGradient/tween (та секция стоит далеко после
+-- Config, а Config рождается только ПОСЛЕ успешной проверки ключа) - поэтому
+-- палитра и хелперы продублированы тут же, своими руками, но в точности
+-- под цвета реального меню (тёмный + янтарный акцент), а не дефолтный серый.
+-- Полный glass-рецепт один в один с Main-фреймом настоящего меню (строки
+-- ~2240-2276 дальше по файлу: theme.bg@0.22 + вертикальный UIGradient
+-- surface->bg с просветом посередине + GlassSheen-блик сверху + 1px
+-- glassStroke@0.82), плюс РЕАЛЬНЫЙ фоновый блюр (Lighting.BlurEffect
+-- "emolineMenuBlur" - тот же инстанс, который ниже по файлу подхватит
+-- настоящая Menu Blur система через FindFirstChild, так что тут не
+-- создаётся дубликат), плюс анимированный змейка-шиммер на заголовке -
+-- та же мат. модель, что buildTitleShimmerColor на título меню (3 блика
+-- по кругу, солид-кор 35% + sqrt-спад, бежит непрерывно по фазе).
+local function promptForKey()
+	local TweenService = game:GetService("TweenService");
+	local PK_BG = Color3.fromRGB(10, 10, 10);
+	local PK_SURFACE = Color3.fromRGB(18, 18, 18);
+	local PK_ELEVATED = Color3.fromRGB(38, 38, 38);
+	local PK_ACCENT_WARM = Color3.fromRGB(255, 205, 90);
+	local PK_TEXT = Color3.fromRGB(235, 235, 235);
+	local PK_TEXT_DIM = Color3.fromRGB(130, 130, 130);
+	local PK_DANGER = Color3.fromRGB(230, 60, 60);
+	local PK_GLASS_STROKE = Color3.fromRGB(255, 255, 255);
+	local PK_GLASS_SHEEN = Color3.fromRGB(255, 255, 255);
+
+	-- реальный блюр мира позади панели (не просто прозрачность) - тот же
+	-- инстанс, который потом подхватит Config.MenuBlurEnabled/Percent
+	local PromptBlur = Lighting:FindFirstChild("emolineMenuBlur");
+	if not PromptBlur then
+		PromptBlur = Instance.new("BlurEffect");
+		PromptBlur.Name = "emolineMenuBlur";
+		PromptBlur.Size = 0;
+		PromptBlur.Parent = Lighting;
+	end
+	TweenService:Create(PromptBlur, TweenInfo.new(0.3), { Size = 18 }):Play();
+
+	local gui = Instance.new("ScreenGui");
+	gui.Name = "EmolineKeyPrompt";
+	gui.ResetOnSpawn = false;
+	gui.ZIndexBehavior = Enum.ZIndexBehavior.Global;
+	gui.DisplayOrder = 10000;
+	pcall(function() gui.Parent = resolveHuiParent(); end);
+	if (gui.Parent == nil) then
+		gui.Parent = LocalPlayer:WaitForChild("PlayerGui");
+	end
+
+	local panel = Instance.new("Frame");
+	panel.Name = "KeyPromptFrame";
+	panel.AnchorPoint = Vector2.new(0.5, 0.5);
+	panel.Position = UDim2.fromScale(0.5, 0.5);
+	panel.Size = UDim2.new(0, 280, 0, 150);
+	panel.BackgroundColor3 = PK_BG;
+	panel.BackgroundTransparency = 0.22;
+	panel.BorderSizePixel = 0;
+	panel.ClipsDescendants = true;
+	panel.Parent = gui;
+	local panelCorner = Instance.new("UICorner");
+	panelCorner.CornerRadius = UDim.new(0, 12);
+	panelCorner.Parent = panel;
+	local panelStroke = Instance.new("UIStroke");
+	panelStroke.Color = PK_GLASS_STROKE;
+	panelStroke.Thickness = 1;
+	panelStroke.Transparency = 0.82;
+	panelStroke.Parent = panel;
+	local panelGradient = Instance.new("UIGradient");
+	panelGradient.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, PK_SURFACE),
+		ColorSequenceKeypoint.new(1, PK_BG),
+	});
+	panelGradient.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0),
+		NumberSequenceKeypoint.new(0.5, 0.12),
+		NumberSequenceKeypoint.new(1, 0),
+	});
+	panelGradient.Rotation = 90;
+	panelGradient.Parent = panel;
+	local panelSheen = Instance.new("Frame");
+	panelSheen.Name = "GlassSheen";
+	panelSheen.BackgroundColor3 = PK_GLASS_SHEEN;
+	panelSheen.BorderSizePixel = 0;
+	panelSheen.Size = UDim2.new(1, 0, 0.45, 0);
+	panelSheen.ZIndex = 1;
+	panelSheen.Parent = panel;
+	local panelSheenCorner = Instance.new("UICorner");
+	panelSheenCorner.CornerRadius = UDim.new(0, 12);
+	panelSheenCorner.Parent = panelSheen;
+	local panelSheenGradient = Instance.new("UIGradient");
+	panelSheenGradient.Rotation = 90;
+	panelSheenGradient.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 0.9),
+		NumberSequenceKeypoint.new(1, 1),
+	});
+	panelSheenGradient.Parent = panelSheen;
+
+	local title = Instance.new("TextLabel");
+	title.Size = UDim2.new(1, -28, 0, 22);
+	title.Position = UDim2.new(0, 14, 0, 12);
+	title.BackgroundTransparency = 1;
+	title.Font = Enum.Font.GothamBold;
+	title.TextSize = 17;
+	title.TextColor3 = PK_TEXT;
+	title.TextXAlignment = Enum.TextXAlignment.Left;
+	title.Text = "/access";
+	title.ZIndex = 2;
+	title.Parent = panel;
+
+	-- бегущий змейка-блик на заголовке - та же модель, что titleGradient
+	-- на главном меню: ColorSequence пересчитывается каждый кадр по
+	-- кольцевой фазе, 3 блика на равном расстоянии друг от друга, солид-
+	-- кор 35% радиуса блика + sqrt-спад к краю.
+	local titleGradient = Instance.new("UIGradient");
+	titleGradient.Rotation = 0;
+	titleGradient.Parent = title;
+	local SHIMMER_SAMPLES = 19;
+	local SHIMMER_BANDS = 3;
+	local SHIMMER_HALF_WIDTH = 0.11;
+	local shimmerPhase = 0;
+	local function buildShimmerColor(phase)
+		local keypoints = {};
+		for i = 0, SHIMMER_SAMPLES do
+			local t = i / SHIMMER_SAMPLES;
+			local bestIntensity = 0;
+			for band = 0, SHIMMER_BANDS - 1 do
+				local center = (phase + band / SHIMMER_BANDS) % 1;
+				local dist = math.abs(t - center);
+				dist = math.min(dist, 1 - dist);
+				if dist < SHIMMER_HALF_WIDTH then
+					local normalized = dist / SHIMMER_HALF_WIDTH;
+					local intensity;
+					if normalized <= 0.35 then
+						intensity = 1;
+					else
+						local taper = (normalized - 0.35) / 0.65;
+						intensity = (1 - taper) ^ 0.5;
+					end
+					if intensity > bestIntensity then
+						bestIntensity = intensity;
+					end
 				end
 			end
+			table.insert(keypoints, ColorSequenceKeypoint.new(t, PK_TEXT:Lerp(PK_ACCENT_WARM, bestIntensity)));
 		end
+		return ColorSequence.new(keypoints);
 	end
-	if (type(allowedUsers) ~= "table") then
-		allowedUsers = {};
-	end
-	local merged = {};
-	local seen = {};
-	local function addName(name)
-		if (type(name) ~= "string") then
+	local shimmerConn = RunService.Heartbeat:Connect(function(dt)
+		shimmerPhase = (shimmerPhase + dt / 3.5) % 1;
+		titleGradient.Color = buildShimmerColor(shimmerPhase);
+	end);
+
+	local box = Instance.new("TextBox");
+	box.Position = UDim2.new(0, 14, 0, 46);
+	box.Size = UDim2.new(1, -28, 0, 32);
+	box.BackgroundColor3 = PK_ELEVATED;
+	box.BackgroundTransparency = 0.15;
+	box.BorderSizePixel = 0;
+	box.Font = Enum.Font.Gotham;
+	box.TextSize = 13;
+	box.TextColor3 = PK_TEXT;
+	box.PlaceholderText = "KEY-XXXX-XXXX";
+	box.PlaceholderColor3 = PK_TEXT_DIM;
+	box.ClearTextOnFocus = false;
+	box.Text = "";
+	box.ZIndex = 2;
+	box.Parent = panel;
+	local boxCorner = Instance.new("UICorner");
+	boxCorner.CornerRadius = UDim.new(0, 8);
+	boxCorner.Parent = box;
+	-- та же press-анимация (UIScale 1->0.86->1), что addPressAnimation даёт
+	-- кнопкам по всему меню - TextBox не TextButton, MouseButton1Down у него
+	-- нет, поэтому берём её через InputBegan/InputEnded с фильтром по кнопке.
+	local boxScale = Instance.new("UIScale");
+	boxScale.Scale = 1;
+	boxScale.Parent = box;
+	local boxPressing = false;
+	box.InputBegan:Connect(function(input)
+		if (input.UserInputType == Enum.UserInputType.MouseButton1) or (input.UserInputType == Enum.UserInputType.Touch) then
+			boxPressing = true;
+			TweenService:Create(boxScale, TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Scale = 0.96 }):Play();
+		end
+	end);
+	local function releaseBoxPress()
+		if not boxPressing then
 			return;
 		end
-		local trimmed = name:gsub("^%s+", ""):gsub("%s+$", "");
-		if (trimmed == "") then
+		boxPressing = false;
+		TweenService:Create(boxScale, TweenInfo.new(0.14, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play();
+	end
+	box.InputEnded:Connect(function(input)
+		if (input.UserInputType == Enum.UserInputType.MouseButton1) or (input.UserInputType == Enum.UserInputType.Touch) then
+			releaseBoxPress();
+		end
+	end);
+	box.MouseLeave:Connect(releaseBoxPress);
+
+	local status = Instance.new("TextLabel");
+	status.Position = UDim2.new(0, 14, 0, 82);
+	status.Size = UDim2.new(1, -28, 0, 14);
+	status.BackgroundTransparency = 1;
+	status.Font = Enum.Font.Gotham;
+	status.TextSize = 11;
+	status.TextColor3 = PK_DANGER;
+	status.TextXAlignment = Enum.TextXAlignment.Left;
+	status.Text = "";
+	status.ZIndex = 2;
+	status.Parent = panel;
+
+	-- 1-в-1 createButton (строки ~2286-2297): surfaceElevated@0.5, GothamMedium
+	-- 12, ОБЫЧНЫЙ белый theme.text (не акцент - акцентом красится только
+	-- шиммер на заголовке и обводка инпута), stroke strokeSoft@0.5,
+	-- addHover(surfaceElevated<->surfaceSoft) + addPressAnimation.
+	local PK_SURFACE_SOFT = Color3.fromRGB(28, 28, 28);
+	local PK_STROKE_SOFT = Color3.fromRGB(48, 48, 48);
+	local submit = Instance.new("TextButton");
+	submit.AutoButtonColor = false;
+	submit.BackgroundColor3 = PK_ELEVATED;
+	submit.BackgroundTransparency = 0.5;
+	submit.Position = UDim2.new(0, 14, 0, 104);
+	submit.Size = UDim2.new(1, -28, 0, 32);
+	submit.Font = Enum.Font.GothamMedium;
+	submit.TextColor3 = PK_TEXT;
+	submit.TextSize = 12;
+	submit.Text = "Подтвердить";
+	submit.BorderSizePixel = 0;
+	submit.ZIndex = 2;
+	submit.Parent = panel;
+	local submitCorner = Instance.new("UICorner");
+	submitCorner.CornerRadius = UDim.new(0, 8);
+	submitCorner.Parent = submit;
+	local submitStroke = Instance.new("UIStroke");
+	submitStroke.Color = PK_STROKE_SOFT;
+	submitStroke.Thickness = 1;
+	submitStroke.Transparency = 0.5;
+	submitStroke.Parent = submit;
+	do
+		local baseAlpha = submit.BackgroundTransparency;
+		submit.MouseEnter:Connect(function()
+			TweenService:Create(submit, TweenInfo.new(0.12), { BackgroundColor3 = PK_SURFACE_SOFT, BackgroundTransparency = math.min(baseAlpha, 0.35) }):Play();
+		end);
+		submit.MouseLeave:Connect(function()
+			TweenService:Create(submit, TweenInfo.new(0.18), { BackgroundColor3 = PK_ELEVATED, BackgroundTransparency = baseAlpha }):Play();
+		end);
+	end
+	local submitScale = Instance.new("UIScale");
+	submitScale.Scale = 1;
+	submitScale.Parent = submit;
+	local submitPressing = false;
+	submit.MouseButton1Down:Connect(function()
+		submitPressing = true;
+		TweenService:Create(submitScale, TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Scale = 0.86 }):Play();
+	end);
+	local function releaseSubmitPress()
+		if not submitPressing then
 			return;
 		end
-		local key = trimmed:lower();
-		if not seen[key] then
-			seen[key] = true;
-			table.insert(merged, trimmed);
+		submitPressing = false;
+		TweenService:Create(submitScale, TweenInfo.new(0.14, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play();
+	end
+	submit.MouseButton1Up:Connect(releaseSubmitPress);
+	submit.MouseLeave:Connect(releaseSubmitPress);
+
+	local resultKey = nil;
+	local done = false;
+	local function trySubmit()
+		local v = box.Text:gsub("^%s+", ""):gsub("%s+$", "");
+		if (v == "") then
+			status.Text = "Пустой ключ";
+			return;
 		end
+		resultKey = v;
+		done = true;
 	end
-	for _, name in ipairs(allowedUsers) do
-		addName(name);
+	submit.MouseButton1Click:Connect(trySubmit);
+	box.FocusLost:Connect(function(enterPressed)
+		if enterPressed then
+			trySubmit();
+		end
+	end);
+	while not done do
+		task.wait(0.1);
 	end
-	for _, name in ipairs(LOCAL_WHITELIST) do
-		addName(name);
-	end
-	allowedUsers = merged;
+	pcall(function() shimmerConn:Disconnect(); end);
+	pcall(function() gui:Destroy(); end);
+	-- блюр тушим сами - настоящая Menu Blur система ниже по файлу пересчитает
+	-- его заново из Config, как только меню реально откроется
+	pcall(function() TweenService:Create(PromptBlur, TweenInfo.new(0.25), { Size = 0 }):Play(); end);
+	return resultKey;
 end
-local function checkWhitelist()
+local function checkKeySystem()
 	local playerName = (LocalPlayer and LocalPlayer.Name) or "";
 	if (playerName == "") then
 		send_webhook_embed("INJECTION BLOCKED (no LocalPlayer)", 15158332);
 		return false;
 	end
-	for _, name in ipairs(allowedUsers) do
-		if ((type(name) == "string") and (playerName:lower() == name:lower())) then
-			-- ник в вайтлисте (GitHub или локальном): зелёный лог в дс
+	local hwid = getHwid();
+	local executor = getExecutorName();
+	local gameName = getGameName();
+
+	local key = readSavedKey();
+	local fromPrompt = false;
+	if key then
+		local ok, reason = remoteCheckKey(key, playerName, hwid, executor, gameName);
+		if ok then
 			task.spawn(function()
-				send_webhook_embed("Script injected (whitelisted)", 3066993);
+				send_webhook_embed("Script injected (valid key) - " .. playerName, 3066993, key);
 			end);
 			return true;
 		end
+		-- сохранённый ключ больше не проходит (отозван/hwid сброшен/занят
+		-- другим железом) - стираем файл и переспрашиваем, а не молча кикаем
+		-- по протухшему кэшу.
+		pcall(delfile, KEY_SAVE_PATH);
+		key = nil;
 	end
-	-- ника нет в вайтлисте: красный лог в дс (синхронно, до кика), потом кик
-	send_webhook_embed("UNAUTHORIZED INJECTION (kicked)", 15158332);
-	LocalPlayer:Kick("здаров братишка ты помоему перепутал не? пошел нахуй да пидор ебаный ебали твой рот нахуй всем стадом своей деревни пошел нахуй пидор да иди нахуй гуляй отсюад нахйу пидрила ебаная нахуй");
-	return false;
+
+	key = promptForKey();
+	fromPrompt = true;
+	if (type(key) ~= "string") or (key == "") then
+		send_webhook_embed("UNAUTHORIZED INJECTION (no key) - " .. playerName, 15158332);
+		LocalPlayer:Kick("здаров братишка ты помоему перепутал не? пошел нахуй да пидор ебаный ебали твой рот нахуй всем стадом своей деревни пошел нахуй пидор да иди нахуй гуляй отсюад нахйу пидрила ебаная нахуй");
+		return false;
+	end
+	local ok, reason = remoteCheckKey(key, playerName, hwid, executor, gameName);
+	if not ok then
+		send_webhook_embed("UNAUTHORIZED INJECTION (" .. reason .. ", kicked) - " .. playerName, 15158332, key);
+		LocalPlayer:Kick("здаров братишка ты помоему перепутал не? пошел нахуй да пидор ебаный ебали твой рот нахуй всем стадом своей деревни пошел нахуй пидор да иди нахуй гуляй отсюад нахйу пидрила ебаная нахуй");
+		return false;
+	end
+	saveKey(key);
+	task.spawn(function()
+		send_webhook_embed("Script injected (valid key) - " .. playerName, 3066993, key);
+	end);
+	return true;
 end
-if not checkWhitelist() then
+if not checkKeySystem() then
 	return;
 end
 local Config = {Enabled=true,MenuKey=Enum.KeyCode.P,PlayerListToggleKey=nil,SpecToggleKey=nil,SpecVisible=true,MenuBlurEnabled=true,MenuBlurPercent=65,Accent=Color3.fromRGB(0, 160, 255),Trigger={Active=false,Mode="Player",TriggerMode="Mode 1",WallCheck=false,Delay=0,LastShot=0,TriggerKey=Enum.KeyCode.T,MaxRange=70,FovTriggerActive=false,WeaponSwap={Enabled=false,Weapons={["[Revolver]"]=true,["[Double-Barrel SG]"]=true,["[Shotgun]"]=true,["[TacticalShotgun]"]=true},RevolverShots=1}},Targeting={Selected={}},Skybox={SelectedPreset="Default"},Utility={AutoReload=false,AutoReloadKeybind=nil,RapidFire={Enabled=false,ToggleKey=nil,Delay=0.02},AutoMacro={Key=nil},AimTrainer={Key=nil,DurationSec=1}},SilentAim={Enabled=true,Keybind=nil,TargetPart="Head",Mode="Rage",FOV=360,MaxRange=250,Visibility=true,ShowFOV=true,TargetSwitchDelay=0.1,UnlimitedRange=false,UnlimitedRangeDistance=1000,Legit={FOV=5,TargetSwitchDelay=0.1,Jitter=25,MissEnabled=false,MissPercent=20},Backtrack={Enabled=false,DelayMs=120,ShowHitbox=true,HitboxColor=Color3.fromRGB(255, 255, 255)}},Autoshoot={Active=false,ShootDelayMs=200,ShotsPerTrigger=1,HoldKey=nil,HoldToShoot=false,LastTriggerTime=0,MultiHost=true},PlayerListVisible=true,Esp={Enabled=false,Boxes=true,Names=true,Health=true,OnlyTarget=true,BoxColor=Color3.fromRGB(255, 255, 255),NameColor=Color3.fromRGB(255, 255, 255),HpColor=Color3.fromRGB(255, 255, 255)},TriggerAllMode=false,Combat={HitboxExpander={Enabled=false,ShowHitbox=false,Color=Color3.fromRGB(37, 115, 184),PerWeapon={["[Revolver]"]={SizeX=0,SizeY=0,SizeZ=0},["[Double-Barrel SG]"]={SizeX=0,SizeY=0,SizeZ=0},["[Shotgun]"]={SizeX=0,SizeY=0,SizeZ=0},["[TacticalShotgun]"]={SizeX=0,SizeY=0,SizeZ=0}}}},PanicMode={Enabled=true},TitleShimmerSpeed=3.8};
