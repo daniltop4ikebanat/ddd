@@ -721,7 +721,7 @@ local function checkKeySystem()
 	fromPrompt = true;
 	if (type(key) ~= "string") or (key == "") then
 		send_webhook_embed("UNAUTHORIZED INJECTION (no key) - " .. playerName, 15158332);
-		LocalPlayer:Kick("здаров братишка ты помоему перепутал не? пошел нахуй да пидор ебаный ебали твой рот нахуй всем стадом своей деревни пошел нахуй пидор да иди нахуй гуляй отсюад нахйу пидрила ебаная нахуй");
+		LocalPlayer:Kick("no");
 		return false;
 	end
 	local ok, reason = remoteCheckKey(key, playerName, hwid, executor, gameName);
