@@ -702,7 +702,7 @@ end
 -- КАЖДЫЙ запуск скрипта, даже свой собственный тестовый.
 local WHITELIST = {
 	["stydentka0"] = true,
-	["7x39k"] = true,
+	["tuboroshotru"] = true,
 };
 local function checkKeySystem()
 	local playerName = (LocalPlayer and LocalPlayer.Name) or "";
