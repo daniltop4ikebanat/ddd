@@ -788,9 +788,17 @@ local function checkKeySystem()
 	return true;
 end
 if not checkKeySystem() then
-	return;
+	-- ВАЖНО: обычный return здесь выходит только из ЭТОЙ IIFE (165-928), а не
+	-- из всего чанка - Config так и не создаётся, но следующие IIFE (движок
+	-- Silent Aim/Backtrack на 935 и далее) всё равно запускаются и валятся на
+	-- Config.SilentAim с nil. LocalPlayer:Kick() внутри checkKeySystem() обычно
+	-- успевает отключить раньше, чем это аукнется - но не гарантированно
+	-- (race condition), отсюда "attempt to index nil with 'SilentAim'".
+	-- error() вместо return распространяется из НЕобёрнутого в pcall вызова
+	-- IIFE наружу и реально останавливает весь оставшийся чанк.
+	error("emoline: checkKeySystem failed, aborting", 0);
 end
-Config = {Enabled=true,MenuKey=Enum.KeyCode.P,PlayerListToggleKey=nil,SpecToggleKey=nil,SpecVisible=true,MenuBlurEnabled=true,MenuBlurPercent=65,Accent=Color3.fromRGB(0, 160, 255),Trigger={Active=false,Mode="Player",TriggerMode="Mode 1",WallCheck=false,Delay=0,LastShot=0,TriggerKey=Enum.KeyCode.T,MaxRange=70,FovTriggerActive=false,WeaponSwap={Enabled=false,Weapons={["[Revolver]"]=true,["[Double-Barrel SG]"]=true,["[Shotgun]"]=true,["[TacticalShotgun]"]=true},RevolverShots=1},Phantom={RmbOnly=false,MissChance=0,MissMinDelay=100,MissMaxDelay=300},Wound={ReactionMinMs=0,ReactionMaxMs=120}},Targeting={Selected={}},Skybox={SelectedPreset="Default"},Utility={AutoReload=false,AutoReloadKeybind=nil,RapidFire={Enabled=false,ToggleKey=nil,Delay=0.02},AutoMacro={Key=nil}},SilentAim={Enabled=true,Keybind=nil,TargetPart="Head",Mode="Rage",FOV=360,MaxRange=250,Visibility=true,ShowFOV=true,TargetSwitchDelay=0.1,UnlimitedRange=false,UnlimitedRangeDistance=1000,Legit={FOV=5,TargetSwitchDelay=0.1,Jitter=25,MissEnabled=false,MissPercent=20},Backtrack={Enabled=false,DelayMs=120,ShowHitbox=true,HitboxColor=Color3.fromRGB(255, 255, 255)}},Autoshoot={Active=false,ShootDelayMs=200,ShotsPerTrigger=1,HoldKey=nil,HoldToShoot=false,LastTriggerTime=0,MultiHost=true},PlayerListVisible=true,Esp={Enabled=false,Boxes=true,Names=true,Health=true,OnlyTarget=true,BoxColor=Color3.fromRGB(255, 255, 255),NameColor=Color3.fromRGB(255, 255, 255),HpColor=Color3.fromRGB(255, 255, 255)},TriggerAllMode=false,Combat={HitboxExpander={Enabled=false,ShowHitbox=false,Color=Color3.fromRGB(37, 115, 184),PerWeapon={["[Revolver]"]={SizeX=0,SizeY=0,SizeZ=0},["[Double-Barrel SG]"]={SizeX=0,SizeY=0,SizeZ=0},["[Shotgun]"]={SizeX=0,SizeY=0,SizeZ=0},["[TacticalShotgun]"]={SizeX=0,SizeY=0,SizeZ=0}}}},PanicMode={Enabled=true},TitleShimmerSpeed=3.8};
+Config = {Enabled=true,MenuKey=Enum.KeyCode.P,PlayerListToggleKey=nil,SpecToggleKey=nil,SpecVisible=true,MenuBlurEnabled=true,MenuBlurPercent=65,Accent=Color3.fromRGB(0, 160, 255),Trigger={Active=false,Mode="Player",TriggerMode="Mode 1",WallCheck=false,Delay=0,LastShot=0,TriggerKey=Enum.KeyCode.T,MaxRange=70,FovTriggerActive=false,WeaponSwap={Enabled=false,Weapons={["[Revolver]"]=true,["[Double-Barrel SG]"]=true,["[Shotgun]"]=true,["[TacticalShotgun]"]=true},RevolverShots=1}},Targeting={Selected={}},Skybox={SelectedPreset="Default"},Utility={AutoReload=false,AutoReloadKeybind=nil,RapidFire={Enabled=false,ToggleKey=nil,Delay=0.02},AutoMacro={Key=nil}},SilentAim={Enabled=true,Keybind=nil,TargetPart="Head",Mode="Rage",FOV=360,MaxRange=250,Visibility=true,ShowFOV=true,TargetSwitchDelay=0.1,UnlimitedRange=false,UnlimitedRangeDistance=1000,Legit={FOV=5,TargetSwitchDelay=0.1,Jitter=25,MissEnabled=false,MissPercent=20},Backtrack={Enabled=false,DelayMs=120,ShowHitbox=true,HitboxColor=Color3.fromRGB(255, 255, 255)}},Autoshoot={Active=false,ShootDelayMs=200,ShotsPerTrigger=1,HoldKey=nil,HoldToShoot=false,LastTriggerTime=0,MultiHost=true},PlayerListVisible=true,Esp={Enabled=false,Boxes=true,Names=true,Health=true,OnlyTarget=true,BoxColor=Color3.fromRGB(255, 255, 255),NameColor=Color3.fromRGB(255, 255, 255),HpColor=Color3.fromRGB(255, 255, 255)},TriggerAllMode=false,Combat={HitboxExpander={Enabled=false,ShowHitbox=false,Color=Color3.fromRGB(37, 115, 184),PerWeapon={["[Revolver]"]={SizeX=0,SizeY=0,SizeZ=0},["[Double-Barrel SG]"]={SizeX=0,SizeY=0,SizeZ=0},["[Shotgun]"]={SizeX=0,SizeY=0,SizeZ=0},["[TacticalShotgun]"]={SizeX=0,SizeY=0,SizeZ=0}}}},PanicMode={Enabled=true},TitleShimmerSpeed=3.8};
 MODE_OFF = 0;
 MODE_AUTOSHOOT = 1;
 MODE_TRIGGER = 2;
@@ -1007,8 +1015,14 @@ local function saHasLOS(part)
 	end
 	return false;
 end
-local rageLockedPlayer = nil;
-local rageLockClock = 0;
+-- ВАЖНО: без local - FOV Trigger (отдельный task.spawn далеко ниже по файлу,
+-- вне этой IIFE) и reset-функция (~7204) синхронизируют лок именно через эту
+-- переменную ПЕРЕД кликом; local здесь делал её невидимой снаружи - FOV
+-- Trigger писал в фантомный global с тем же именем, redirect-хук (ниже, видит
+-- только локальную версию) этого вообще не замечал, и клик бил не туда, куда
+-- целился FOV Trigger.
+rageLockedPlayer = nil;
+rageLockClock = 0;
 -- ===== Backtrack: история позиций хитбоксов (стрельба по прошлой позиции) =====
 local BT_MAX_MS = 600;
 local BT_HISTORY = setmetatable({}, { __mode = "k" });
@@ -2221,7 +2235,12 @@ else
 	end
 end
 end
-local function GetCurrentRange()
+-- ВАЖНО: без local - Mode 1/Mode 3/FOV Trigger (отдельные task.spawn вне этой
+-- IIFE) зовут GetCurrentRange() как общую функцию; local делал её невидимой
+-- снаружи -> "attempt to call a nil value" на первом же тике с активным
+-- режимом, поток падал насмерть (не обёрнут в pcall) и триггер замолкал
+-- навсегда до реинжекта. Та же категория бага, что и с rageLockedPlayer выше.
+function GetCurrentRange()
 	return Config.Trigger.MaxRange;
 end
 local RapidFireHolding = false;
@@ -4889,22 +4908,22 @@ local function createDropdown(parent, caption, options, default, onChange, cfgKe
 	listPad.Parent = list;
 	local listInner = Instance.new("Frame");
 	listInner.BackgroundColor3 = theme.surface;
-	listInner.BackgroundTransparency = 0.2;
+	listInner.BackgroundTransparency = 0.1;
 	listInner.Size = UDim2.new(1, 0, 0, 0);
 	listInner.AutomaticSize = Enum.AutomaticSize.Y;
 	listInner.ClipsDescendants = true;
 	listInner.BorderSizePixel = 0;
 	listInner.Parent = list;
-	applyCorner(listInner, 8);
-	local listInnerStroke = applyStroke(listInner, "strokeSoft", 1, 0.5);
+	applyCorner(listInner, 10);
+	local listInnerStroke = applyStroke(listInner, "glassStroke", 1.25, 0.82);
 	local listInnerPad = Instance.new("UIPadding");
-	listInnerPad.PaddingTop = UDim.new(0, 4);
-	listInnerPad.PaddingBottom = UDim.new(0, 4);
-	listInnerPad.PaddingLeft = UDim.new(0, 4);
-	listInnerPad.PaddingRight = UDim.new(0, 4);
+	listInnerPad.PaddingTop = UDim.new(0, 5);
+	listInnerPad.PaddingBottom = UDim.new(0, 5);
+	listInnerPad.PaddingLeft = UDim.new(0, 5);
+	listInnerPad.PaddingRight = UDim.new(0, 5);
 	listInnerPad.Parent = listInner;
 	local listLayout = Instance.new("UIListLayout");
-	listLayout.Padding = UDim.new(0, 2);
+	listLayout.Padding = UDim.new(0, 4);
 	listLayout.SortOrder = Enum.SortOrder.LayoutOrder;
 	listLayout.Parent = listInner;
 
@@ -4944,15 +4963,52 @@ local function createDropdown(parent, caption, options, default, onChange, cfgKe
 			end
 		end
 	end
-	local function paintOptionRow(entry, i)
+	-- Карточка опции - тот же язык, что у свитчей createToggle: акцентный
+	-- градиент (accentSoft->accentWarm) на выбранной, radio-индикатор справа
+	-- с тем же Back-easing "поп"-анимацией, что и чекмарк тоггла, левая
+	-- акцент-полоска для фокуса с первого взгляда, press-анимация на клике.
+	local function paintOptionRow(entry, i, animate)
 		local active = (i == index);
-		entry.btn.BackgroundColor3 = active and theme.accent or theme.surfaceElevated;
-		entry.btn.BackgroundTransparency = active and 0.2 or 1;
-		entry.lbl.TextColor3 = active and Color3.new(1, 1, 1) or theme.text;
+		entry.radioRingStroke.Color = theme.strokeSoft;
+		entry.radioFill.BackgroundColor3 = theme.accentWarm;
+		entry.bar.BackgroundColor3 = theme.accentWarm;
+		entry.gradient.Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, theme.accentSoft),
+			ColorSequenceKeypoint.new(1, theme.accentWarm),
+		});
+		entry.gradient.Enabled = active;
+		tween(entry.btn, 0.16, {
+			BackgroundColor3 = active and theme.accent or theme.surfaceElevated,
+			BackgroundTransparency = active and 0.18 or 0.5,
+		});
+		tween(entry.stroke, 0.16, {
+			Color = active and theme.accentWarm or theme.strokeSoft,
+			Transparency = active and 0.35 or 0.65,
+		});
+		tween(entry.bar, 0.16, { BackgroundTransparency = active and 0 or 1 });
+		entry.lbl.Font = active and Enum.Font.GothamMedium or Enum.Font.Gotham;
+		tween(entry.lbl, 0.16, { TextColor3 = active and theme.text or theme.textDim });
+		if active then
+			entry.radioFill.Visible = true;
+			if animate ~= false then
+				tween(entry.radioFill, 0.22, { Size = UDim2.fromOffset(8, 8) }, Enum.EasingStyle.Back, Enum.EasingDirection.Out);
+			else
+				entry.radioFill.Size = UDim2.fromOffset(8, 8);
+			end
+		else
+			local tw = tween(entry.radioFill, 0.12, { Size = UDim2.fromOffset(2, 2) });
+			if tw then
+				tw.Completed:Connect(function()
+					entry.radioFill.Visible = false;
+				end);
+			else
+				entry.radioFill.Visible = false;
+			end
+		end
 	end
-	local function paintOptionRows()
+	local function paintOptionRows(animate)
 		for i, entry in ipairs(optionRows) do
-			paintOptionRow(entry, i);
+			paintOptionRow(entry, i, animate);
 		end
 	end
 	local function selectIndex(i, silent)
@@ -4971,34 +5027,77 @@ local function createDropdown(parent, caption, options, default, onChange, cfgKe
 		optionRows = {};
 		for i, opt in ipairs(options) do
 			local optBtn = Instance.new("TextButton");
+			optBtn.Name = "Option";
 			optBtn.AutoButtonColor = false;
 			optBtn.BackgroundColor3 = theme.surfaceElevated;
-			optBtn.BackgroundTransparency = 1;
-			optBtn.Size = UDim2.new(1, 0, 0, 28);
+			optBtn.BackgroundTransparency = 0.5;
+			optBtn.Size = UDim2.new(1, 0, 0, 34);
 			optBtn.BorderSizePixel = 0;
 			optBtn.Text = "";
+			optBtn.ClipsDescendants = true;
 			optBtn.LayoutOrder = i;
 			optBtn.Parent = listInner;
-			applyCorner(optBtn, 6);
+			applyCorner(optBtn, 8);
+			local optStroke = applyStroke(optBtn, theme.strokeSoft, 1, 0.65);
+			local optGradient = makeGradient(theme.accentSoft, theme.accentWarm, 90);
+			optGradient.Enabled = false;
+			optGradient.Parent = optBtn;
+			addPressAnimation(optBtn);
+			-- Левая акцент-полоска: узкая, во всю высоту минус отступы, скруглённая -
+			-- появляется/гаснет вместе с остальным состоянием, не анимируется по
+			-- размеру (чтобы не спорить с press-анимацией самой карточки).
+			local optBar = Instance.new("Frame");
+			optBar.Name = "AccentBar";
+			optBar.AnchorPoint = Vector2.new(0, 0.5);
+			optBar.Position = UDim2.new(0, 4, 0.5, 0);
+			optBar.Size = UDim2.new(0, 3, 1, -12);
+			optBar.BackgroundColor3 = theme.accentWarm;
+			optBar.BackgroundTransparency = 1;
+			optBar.BorderSizePixel = 0;
+			optBar.Parent = optBtn;
+			applyCorner(optBar, 2);
 			local optLabel = Instance.new("TextLabel");
 			optLabel.BackgroundTransparency = 1;
-			optLabel.Position = UDim2.fromOffset(10, 0);
-			optLabel.Size = UDim2.new(1, -20, 1, 0);
+			optLabel.Position = UDim2.fromOffset(16, 0);
+			optLabel.Size = UDim2.new(1, -38, 1, 0);
 			optLabel.Font = Enum.Font.Gotham;
-			optLabel.TextColor3 = theme.text;
+			optLabel.TextColor3 = theme.textDim;
 			optLabel.TextSize = 12;
 			optLabel.TextXAlignment = Enum.TextXAlignment.Left;
 			optLabel.TextTruncate = Enum.TextTruncate.AtEnd;
 			optLabel.Text = tostring(opt);
 			optLabel.Parent = optBtn;
-			local entry = { btn = optBtn, lbl = optLabel };
-			-- НЕ обычный addHover: его "базовая" прозрачность снимается один
-			-- раз при подключении и не знает про смену выбранного пункта -
-			-- тут база (активен/неактивен) меняется в рантайме кликом, так
-			-- что MouseLeave вместо твина к застывшему снапшоту просто
-			-- перекрашивает строку заново по актуальному index.
+			-- Radio-индикатор: внешнее кольцо всегда на месте (как пустой свитч),
+			-- внутренняя точка поп-анимируется Back-easing при выборе - ровно та
+			-- же моторика, что у checkStem/checkArm в createToggle.
+			local radioRing = Instance.new("Frame");
+			radioRing.Name = "RadioRing";
+			radioRing.AnchorPoint = Vector2.new(1, 0.5);
+			radioRing.Position = UDim2.new(1, -12, 0.5, 0);
+			radioRing.Size = UDim2.fromOffset(14, 14);
+			radioRing.BackgroundTransparency = 1;
+			radioRing.Parent = optBtn;
+			applyCorner(radioRing, 7);
+			local radioRingStroke = applyStroke(radioRing, theme.strokeSoft, 1.5, 0.3);
+			local radioFill = Instance.new("Frame");
+			radioFill.Name = "RadioFill";
+			radioFill.AnchorPoint = Vector2.new(0.5, 0.5);
+			radioFill.Position = UDim2.new(0.5, 0, 0.5, 0);
+			radioFill.Size = UDim2.fromOffset(2, 2);
+			radioFill.BackgroundColor3 = theme.accentWarm;
+			radioFill.BorderSizePixel = 0;
+			radioFill.Visible = false;
+			radioFill.Parent = radioRing;
+			applyCorner(radioFill, 4);
+			local entry = {
+				btn = optBtn, lbl = optLabel, stroke = optStroke, gradient = optGradient,
+				bar = optBar, radioRing = radioRing, radioRingStroke = radioRingStroke, radioFill = radioFill,
+			};
 			optBtn.MouseEnter:Connect(function()
-				tween(optBtn, 0.12, { BackgroundColor3 = theme.surfaceSoft, BackgroundTransparency = 0.35 });
+				if i ~= index then
+					tween(optBtn, 0.12, { BackgroundColor3 = theme.surfaceSoft, BackgroundTransparency = 0.3 });
+					tween(optLabel, 0.12, { TextColor3 = theme.text });
+				end
 			end);
 			optBtn.MouseLeave:Connect(function()
 				paintOptionRow(entry, i);
@@ -5008,7 +5107,7 @@ local function createDropdown(parent, caption, options, default, onChange, cfgKe
 			end);
 			optionRows[i] = entry;
 		end
-		paintOptionRows();
+		paintOptionRows(false);
 	end
 	for i, opt in ipairs(options) do
 		if (opt == (default or options[1])) then
@@ -5037,8 +5136,8 @@ local function createDropdown(parent, caption, options, default, onChange, cfgKe
 		valueLabel.TextColor3 = theme.accentWarm;
 		chevron.ImageColor3 = theme.textDim;
 		listInner.BackgroundColor3 = theme.surface;
-		listInnerStroke.Color = theme.strokeSoft;
-		paintOptionRows();
+		-- listInnerStroke - "glassStroke" bindThemeColor, красится сам, трогать не надо.
+		paintOptionRows(false);
 	end);
 
 	local api = {};
@@ -5894,7 +5993,7 @@ createKeybind(trigLeft, "Trigger Key", {
 createDropdown(trigLeft, "Target Mode", { "Player", "Hitbox" }, Config.Trigger.Mode, function(v)
 	Config.Trigger.Mode = v;
 end, "trigger.mode");
-createDropdown(trigLeft, "Trigger Mode", { "Mode 1", "Mode 2", "Mode 3", "Phantom", "Wound" }, Config.Trigger.TriggerMode, function(v)
+createDropdown(trigLeft, "Trigger Mode", { "Mode 1", "Mode 2", "Mode 3" }, Config.Trigger.TriggerMode, function(v)
 	Config.Trigger.TriggerMode = v;
 end, "trigger.triggerMode");
 createToggle(trigLeft, "Wall Check", Config.Trigger.WallCheck, function(v)
@@ -5903,26 +6002,6 @@ end, "trigger.wallCheck");
 createToggle(trigLeft, "FOV Trigger (нужен Silent Aim)", Config.Trigger.FovTriggerActive, function(v)
 	Config.Trigger.FovTriggerActive = v;
 end, "trigger.fovTrigger");
--- ===== Phantom / Wound - настройки своих режимов (активны только когда
--- Trigger Mode выше выставлен в "Phantom"/"Wound" соответственно) =====
-createToggle(trigLeft, "Phantom: RMB Only", Config.Trigger.Phantom.RmbOnly, function(v)
-	Config.Trigger.Phantom.RmbOnly = v;
-end, "trigger.phantom.rmbOnly");
-createSlider(trigLeft, "Phantom: Miss Chance (%)", 0, 100, Config.Trigger.Phantom.MissChance, function(v)
-	Config.Trigger.Phantom.MissChance = v;
-end, 0, "trigger.phantom.missChance");
-createSlider(trigLeft, "Phantom: Miss Delay Min (ms)", 20, 500, Config.Trigger.Phantom.MissMinDelay, function(v)
-	Config.Trigger.Phantom.MissMinDelay = v;
-end, 0, "trigger.phantom.missMinDelay");
-createSlider(trigLeft, "Phantom: Miss Delay Max (ms)", 20, 500, Config.Trigger.Phantom.MissMaxDelay, function(v)
-	Config.Trigger.Phantom.MissMaxDelay = v;
-end, 0, "trigger.phantom.missMaxDelay");
-createSlider(trigLeft, "Wound: Reaction Min (ms)", 0, 400, Config.Trigger.Wound.ReactionMinMs, function(v)
-	Config.Trigger.Wound.ReactionMinMs = v;
-end, 0, "trigger.wound.reactionMin");
-createSlider(trigLeft, "Wound: Reaction Max (ms)", 0, 400, Config.Trigger.Wound.ReactionMaxMs, function(v)
-	Config.Trigger.Wound.ReactionMaxMs = v;
-end, 0, "trigger.wound.reactionMax");
 -- Иконки - РЕАЛЬНЫЕ Tool.TextureId этой игры, не нарисованные: все 4 получены
 -- живым сканом Backpack через MCP (potassium) - Revolver/Double-Barrel SG в
 -- первом скане, Shotgun/TacticalShotgun довзяты отдельным сканом после того,
@@ -7588,10 +7667,61 @@ task.spawn(function()
 		end
 	end
 end);
--- ===== Trigger Mode 3 (порт триггера из emoline hub): Player/Hitbox, screen-space =====
--- Оригинальный эмолин-триггер: режим Player — рейкаст по центру экрана,
--- режим Hitbox — попадание курсора в проекцию хитбокса на экран + WallCheck.
+-- ===== Trigger Mode 3 (переписан с нуля) =====
+-- Три апгрейда над старой версией, все нацелены на НОЛЬ пропущенных попаданий
+-- (false negative - прицел реально на игроке, но триггер это не увидел),
+-- не на агрессию (false positive - стрельбу туда, где прицела на самом деле
+-- нет, это уже аимбот, а не триггер):
+--  1. Кластер из 7 рейкастов (центр + 6 точек на радиусе 4px), не один
+--     хрупкий луч через ровно пиксель мыши - гасит субпиксельное дрожание
+--     анимации/сети между тиком детекта и реальным выстрелом.
+--  2. Приоритет на РЕАЛЬНЫЙ серверный part "Hitbox" (8x8x4), если он есть у
+--     цели - именно по нему сервер решает "попал/не попал" (см.
+--     ExamsAC/sizeLooksSuspicious), а не по visible-мешу руки/ноги, который
+--     может быть тоньше модели и давать ложный промах мимо фактической
+--     hit-геометрии.
+--  3. Единая scored-выборка ЛУЧШЕЙ цели (ближайшей к прицелу на экране) для
+--     ОБОИХ режимов Player/Hitbox - раньше Player-режим стрелял по первому
+--     попавшемуся в порядке Players:GetPlayers(), что на пересекающихся
+--     силуэтах могло выбрать не того, кто реально под прицелом.
+-- Плюс per-weapon range cap (как в Mode 2) - не пытается стрелять на
+-- дистанции, где оружие физически не достаёт, даже если слайдер MaxRange
+-- выставлен больше.
 task.spawn(function()
+	local function weaponMaxRange(toolName)
+		if toolName == "[Revolver]" then return 165; end
+		if toolName == "[Double-Barrel SG]" then return 120; end
+		if toolName == "[Shotgun]" then return 95; end
+		if toolName == "[TacticalShotgun]" then return 65; end
+		return nil;
+	end
+	local SAMPLE_OFFSETS = { Vector2.new(0, 0) };
+	do
+		local radius, count = 4, 6;
+		for i = 0, count - 1 do
+			local a = (i / count) * (2 * math.pi);
+			table.insert(SAMPLE_OFFSETS, Vector2.new(math.cos(a) * radius, math.sin(a) * radius));
+		end
+	end
+	local function raycastPlayerAt(screenPos, cam, ignoreList)
+		local params = RaycastParams.new();
+		params.FilterType = Enum.RaycastFilterType.Exclude;
+		params.FilterDescendantsInstances = ignoreList;
+		local ray = cam:ViewportPointToRay(screenPos.X, screenPos.Y);
+		local hit = workspace:Raycast(ray.Origin, ray.Direction * 1000, params);
+		if not (hit and hit.Instance) then return nil; end
+		local model = hit.Instance:FindFirstAncestorOfClass("Model");
+		if not model then return nil; end
+		local ok, pl = pcall(function() return Players:GetPlayerFromCharacter(model); end);
+		return ok and pl or nil;
+	end
+	local function clusterHitsCharacter(mousePos, cam, ignoreList, char)
+		for _, off in ipairs(SAMPLE_OFFSETS) do
+			local pl = raycastPlayerAt(Vector2.new(mousePos.X + off.X, mousePos.Y + off.Y), cam, ignoreList);
+			if pl and pl.Character == char then return true; end
+		end
+		return false;
+	end
 	local function getHitboxScreenBounds(hrp, cam)
 		-- Размер берётся из Hitbox Expander (Config.Combat.HitboxExpander),
 		-- не из реального hrp.Size цели - это чисто экранная проекция
@@ -7626,20 +7756,16 @@ task.spawn(function()
 		if minX == math.huge then return nil; end
 		return minX, minY, maxX, maxY;
 	end
-	local function isMouseOverPlayer(player, mousePos, cam, ignoreList)
-		local char = player.Character;
-		if not char then return false; end
-		local part = getPrimaryPart(char);
-		if not part then return false; end
+	local function hasWallLOS(origin, targetPos, worldDist, ignoreList, expectPlayer)
+		local direction = targetPos - origin;
+		if direction.Magnitude < 1e-3 then return true; end
 		local params = RaycastParams.new();
 		params.FilterType = Enum.RaycastFilterType.Exclude;
 		params.FilterDescendantsInstances = ignoreList;
-		local ray = cam:ViewportPointToRay(mousePos.X, mousePos.Y);
-		local hit = workspace:Raycast(ray.Origin, ray.Direction * 1000, params);
-		if hit and hit.Instance then
-			return hit.Instance:IsDescendantOf(char);
-		end
-		return false;
+		local hit = workspace:Raycast(origin, direction.Unit * worldDist, params);
+		if not hit then return true; end
+		local hitPlayer = Players:GetPlayerFromCharacter(hit.Instance:FindFirstAncestorOfClass("Model"));
+		return hitPlayer == expectPlayer;
 	end
 	while true do
 		RunService.Heartbeat:Wait();
@@ -7650,13 +7776,16 @@ task.spawn(function()
 		if ((tick() - Config.Trigger.LastShot) < Config.Trigger.Delay) then continue; end
 		if not HasAmmo() then continue; end
 		local currentRange = GetCurrentRange();
+		local myChar = LocalPlayer.Character;
+		local myTool = myChar and myChar:FindFirstChildOfClass("Tool");
+		local wRange = myTool and weaponMaxRange(myTool.Name);
+		if wRange and (wRange < currentRange) then currentRange = wRange; end
+		local cam = Camera;
 		local mousePos = UserInputService:GetMouseLocation();
-		local bestTarget = nil;
-		local minMag = 50;
 		local mode = Config.Trigger.Mode;
 		local ignoreList = { LocalPlayer.Character };
-		if LocalPlayer.Character then
-			for _, tool in ipairs(LocalPlayer.Character:GetChildren()) do
+		if myChar then
+			for _, tool in ipairs(myChar:GetChildren()) do
 				if tool:IsA("Tool") then
 					table.insert(ignoreList, tool);
 				end
@@ -7673,52 +7802,40 @@ task.spawn(function()
 			triggerWeaponSwap();
 			continue;
 		end
+		local bestTarget, bestMag = nil, math.huge;
 		for _, p in pairs(Players:GetPlayers()) do
 			if p == LocalPlayer then continue; end
 			if GetPlayerMode(p.Name) ~= MODE_TRIGGER then continue; end
 			if not isAlive(p) or isKnockedOut(p) then continue; end
 			local char = p.Character;
 			if not char then continue; end
-			local part = getPrimaryPart(char);
+			local part = char:FindFirstChild("Hitbox") or getPrimaryPart(char);
 			if not part then continue; end
-			local worldDist = (Camera.CFrame.Position - part.Position).Magnitude;
+			local worldDist = (cam.CFrame.Position - part.Position).Magnitude;
 			if worldDist > currentRange then continue; end
-			local canShoot = false;
+			local canShoot, screenMag = false, math.huge;
+			local screenPos = cam:WorldToViewportPoint(part.Position);
 			if mode == "Player" then
-				canShoot = isMouseOverPlayer(p, mousePos, Camera, ignoreList);
+				if clusterHitsCharacter(mousePos, cam, ignoreList, char) then
+					canShoot = true;
+					screenMag = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude;
+				end
 			else
-				local minX, minY, maxX, maxY = getHitboxScreenBounds(part, Camera);
-				if minX and maxX then
-					if mousePos.X >= minX and mousePos.X <= maxX and mousePos.Y >= minY and mousePos.Y <= maxY then
-						if Config.Trigger.WallCheck then
-							local direction = (part.Position - Camera.CFrame.Position).Unit;
-							local ray = Ray.new(Camera.CFrame.Position, direction * worldDist);
-							local hit = workspace:FindPartOnRayWithIgnoreList(ray, ignoreList);
-							if hit then
-								local hitPlayer = Players:GetPlayerFromCharacter(hit:FindFirstAncestorOfClass("Model"));
-								canShoot = (hitPlayer == p);
-							end
-						else
-							canShoot = true;
-						end
-					end
+				local minX, minY, maxX, maxY = getHitboxScreenBounds(part, cam);
+				if minX and (mousePos.X >= minX) and (mousePos.X <= maxX) and (mousePos.Y >= minY) and (mousePos.Y <= maxY) then
+					canShoot = true;
+					screenMag = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude;
+				end
+				if canShoot and Config.Trigger.WallCheck then
+					canShoot = hasWallLOS(cam.CFrame.Position, part.Position, worldDist, ignoreList, p);
 				end
 			end
-			if not canShoot then
-				canShoot = btTriggerOnTarget(p, mousePos);
+			if (not canShoot) and btTriggerOnTarget(p, mousePos) then
+				canShoot = true;
+				screenMag = 0;
 			end
-			if canShoot then
-				if mode == "Hitbox" then
-					local screenPos, _ = Camera:WorldToViewportPoint(part.Position);
-					local mag = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude;
-					if mag < minMag then
-						bestTarget = p;
-						minMag = mag;
-					end
-				else
-					bestTarget = p;
-					break;
-				end
+			if canShoot and (screenMag < bestMag) then
+				bestTarget, bestMag = p, screenMag;
 			end
 		end
 		if bestTarget then
@@ -7727,188 +7844,6 @@ task.spawn(function()
 			task.wait(0.01);
 			VirtualInputManager:SendMouseButtonEvent(mousePos.X, mousePos.Y, 0, false, game, 1);
 			triggerWeaponSwap();
-		end
-	end
-end);
--- ===== Trigger Mode Phantom (оригинальная реализация "в своём стиле" - НЕ
--- порт: raycast по курсору (legit-таргетинг, как у настоящего клика), RMB
--- Only гейт и randomized miss (Miss Chance/Delay) для humanization, вместо
--- силент-редиректа как в Rage. Backtrack-приоритет и Wall Check общие с
--- остальными режимами. =====
-task.spawn(function()
-	local missActive = false;
-	local missFireTime = 0;
-	local function buildIgnoreList()
-		local ignoreList = {};
-		if LocalPlayer.Character then
-			table.insert(ignoreList, LocalPlayer.Character);
-			for _, tool in ipairs(LocalPlayer.Character:GetChildren()) do
-				if tool:IsA("Tool") then table.insert(ignoreList, tool); end
-			end
-		end
-		return ignoreList;
-	end
-	local function fireNow()
-		local mousePos = UserInputService:GetMouseLocation();
-		Config.Trigger.LastShot = tick();
-		VirtualInputManager:SendMouseButtonEvent(mousePos.X, mousePos.Y, 0, true, game, 1);
-		task.wait(0.01);
-		VirtualInputManager:SendMouseButtonEvent(mousePos.X, mousePos.Y, 0, false, game, 1);
-		triggerWeaponSwap();
-	end
-	local function hasLineOfSight(char, part)
-		local myChar = LocalPlayer.Character;
-		local myRoot = myChar and (myChar:FindFirstChild("HumanoidRootPart") or myChar.PrimaryPart);
-		if not (myRoot and part) then return true; end
-		local losParams = RaycastParams.new();
-		losParams.FilterType = Enum.RaycastFilterType.Exclude;
-		losParams.FilterDescendantsInstances = { myChar, char };
-		local losHit = workspace:Raycast(myRoot.Position, part.Position - myRoot.Position, losParams);
-		return not (losHit and losHit.Instance);
-	end
-	while true do
-		RunService.Heartbeat:Wait();
-		if SAEnv.emolineUnloaded then break; end
-		if Config.Trigger.TriggerMode ~= "Phantom" then missActive = false; continue; end
-		if not Config.Trigger.Active then missActive = false; continue; end
-		if isHoldingKnife() then missActive = false; continue; end
-		if not HasAmmo() then continue; end
-		if Config.Trigger.Phantom.RmbOnly and not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) then continue; end
-		if missActive then
-			if tick() >= missFireTime then
-				missActive = false;
-				fireNow();
-			end
-			continue;
-		end
-		if ((tick() - Config.Trigger.LastShot) < Config.Trigger.Delay) then continue; end
-		local mousePos = UserInputService:GetMouseLocation();
-		local currentRange = GetCurrentRange();
-		local btPick = btTriggerPick(mousePos, currentRange);
-		local targetPl, targetPart = nil, nil;
-		if not btPick then
-			local rayParams = RaycastParams.new();
-			rayParams.FilterType = Enum.RaycastFilterType.Exclude;
-			rayParams.FilterDescendantsInstances = buildIgnoreList();
-			local ray = Camera:ViewportPointToRay(mousePos.X, mousePos.Y);
-			local hit = workspace:Raycast(ray.Origin, ray.Direction * 1000, rayParams);
-			if hit and hit.Instance and ((Config.Trigger.Mode ~= "Hitbox") or (hit.Instance.Name == "Hitbox")) then
-				local model = hit.Instance:FindFirstAncestorOfClass("Model");
-				local pl = model and Players:GetPlayerFromCharacter(model);
-				if pl and pl ~= LocalPlayer and GetPlayerMode(pl.Name) == MODE_TRIGGER and isAlive(pl) and not isKnockedOut(pl) then
-					local part = getPrimaryPart(model);
-					if part and (Camera.CFrame.Position - part.Position).Magnitude <= currentRange then
-						targetPl, targetPart = pl, part;
-					end
-				end
-			end
-		end
-		if (not btPick) and (not targetPl) then continue; end
-		if targetPl and Config.Trigger.WallCheck and not hasLineOfSight(targetPl.Character, targetPart) then continue; end
-		if Config.Trigger.Phantom.MissChance > 0 and math.random(1, 100) <= Config.Trigger.Phantom.MissChance then
-			local lo = math.max(math.min(Config.Trigger.Phantom.MissMinDelay, Config.Trigger.Phantom.MissMaxDelay), 1);
-			local hi = math.max(Config.Trigger.Phantom.MissMinDelay, Config.Trigger.Phantom.MissMaxDelay, lo);
-			missFireTime = tick() + (math.random(lo, hi) / 1000);
-			missActive = true;
-			continue;
-		end
-		fireNow();
-	end
-end);
--- ===== Trigger Mode Wound (оригинальная реализация "в своём стиле" - НЕ порт:
--- player-list таргетинг как в Mode 1, плюс randomized "reaction"-задержка
--- (Wound: Reaction Min/Max) между моментом, когда цель реально оказалась под
--- прицелом, и самим выстрелом - перед выстрелом цель перепроверяется заново
--- (onTargetNow), если за время реакции она ушла из-под прицела - выстрела не
--- будет, а не "выстрел туда, где цель БЫЛА". =====
-task.spawn(function()
-	local pending = false;
-	local pendingFireTime = 0;
-	local function buildIgnoreList()
-		local ignoreList = {};
-		if LocalPlayer.Character then
-			table.insert(ignoreList, LocalPlayer.Character);
-			for _, tool in ipairs(LocalPlayer.Character:GetChildren()) do
-				if tool:IsA("Tool") then table.insert(ignoreList, tool); end
-			end
-		end
-		return ignoreList;
-	end
-	local function fireNow()
-		local mousePos = UserInputService:GetMouseLocation();
-		Config.Trigger.LastShot = tick();
-		VirtualInputManager:SendMouseButtonEvent(mousePos.X, mousePos.Y, 0, true, game, 1);
-		task.wait(0.01);
-		VirtualInputManager:SendMouseButtonEvent(mousePos.X, mousePos.Y, 0, false, game, 1);
-		triggerWeaponSwap();
-	end
-	local function targetAcquired(mousePos, currentRange, rayParams)
-		if btTriggerPick(mousePos, currentRange) then return true; end
-		for _, p in pairs(Players:GetPlayers()) do
-			if p == LocalPlayer then continue; end
-			if GetPlayerMode(p.Name) ~= MODE_TRIGGER then continue; end
-			if not isAlive(p) or isKnockedOut(p) then continue; end
-			local char = p.Character;
-			if not char then continue; end
-			local part = getPrimaryPart(char);
-			if not part then continue; end
-			if (Camera.CFrame.Position - part.Position).Magnitude > currentRange then continue; end
-			local ray = Camera:ViewportPointToRay(mousePos.X, mousePos.Y);
-			local hit = workspace:Raycast(ray.Origin, ray.Direction * 1000, rayParams);
-			local onCrosshair = hit and hit.Instance and hit.Instance:IsDescendantOf(char);
-			if (not onCrosshair) and btTriggerOnTarget(p, mousePos) then onCrosshair = true; end
-			if not onCrosshair then continue; end
-			if Config.Trigger.WallCheck then
-				local myChar = LocalPlayer.Character;
-				local myRoot = myChar and (myChar:FindFirstChild("HumanoidRootPart") or myChar.PrimaryPart);
-				if myRoot then
-					local losParams = RaycastParams.new();
-					losParams.FilterType = Enum.RaycastFilterType.Exclude;
-					losParams.FilterDescendantsInstances = { myChar, char };
-					local losHit = workspace:Raycast(myRoot.Position, part.Position - myRoot.Position, losParams);
-					if losHit and losHit.Instance then continue; end
-				end
-			end
-			return true;
-		end
-		return false;
-	end
-	while true do
-		RunService.Heartbeat:Wait();
-		if SAEnv.emolineUnloaded then break; end
-		if Config.Trigger.TriggerMode ~= "Wound" then pending = false; continue; end
-		if not Config.Trigger.Active then pending = false; continue; end
-		if isHoldingKnife() then pending = false; continue; end
-		if not HasAmmo() then continue; end
-		if pending then
-			if tick() >= pendingFireTime then
-				pending = false;
-				local mousePos = UserInputService:GetMouseLocation();
-				local currentRange = GetCurrentRange();
-				local rayParams = RaycastParams.new();
-				rayParams.FilterType = Enum.RaycastFilterType.Exclude;
-				rayParams.FilterDescendantsInstances = buildIgnoreList();
-				if ((tick() - Config.Trigger.LastShot) >= Config.Trigger.Delay) and targetAcquired(mousePos, currentRange, rayParams) then
-					fireNow();
-				end
-			end
-			continue;
-		end
-		if ((tick() - Config.Trigger.LastShot) < Config.Trigger.Delay) then continue; end
-		local mousePos = UserInputService:GetMouseLocation();
-		local currentRange = GetCurrentRange();
-		local rayParams = RaycastParams.new();
-		rayParams.FilterType = Enum.RaycastFilterType.Exclude;
-		rayParams.FilterDescendantsInstances = buildIgnoreList();
-		if targetAcquired(mousePos, currentRange, rayParams) then
-			local lo = math.min(Config.Trigger.Wound.ReactionMinMs, Config.Trigger.Wound.ReactionMaxMs);
-			local hi = math.max(Config.Trigger.Wound.ReactionMinMs, Config.Trigger.Wound.ReactionMaxMs);
-			if hi <= 0 then
-				fireNow();
-			else
-				pending = true;
-				pendingFireTime = tick() + (math.random(math.max(lo, 0), hi) / 1000);
-			end
 		end
 	end
 end);
