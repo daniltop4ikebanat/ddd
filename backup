@@ -154,15 +154,6 @@ local function connectLive(signal, fn)
 	table.insert(liveConnections, conn);
 	return conn;
 end
--- Форвард-объявления для всего, что используется ЗА пределами блока ниже
--- (webhook + key system) - сам блок завёрнут в IIFE, чтобы его ~40 локалов
--- не копились в бюджете регистров top-level чанка (тот же приём, что и для
--- страниц ниже: одна функция = свой отдельный бюджет в 200 регистров).
-local Config;
-local MODE_OFF, MODE_AUTOSHOOT, MODE_TRIGGER, MODE_COLORS;
-local GetPlayerMode, SetPlayerMode, getPrimaryPart, isKnockedOut, isAlive, isHoldingKnife, HasAmmo, getHitboxExpanderSize, AutoReload;
-local savedTargetModes;
-(function()
 -- ===== Discord webhook: лог инжектов =====
 -- ВСТАВЬ свой webhook URL (Discord: настройки канала -> Интеграция -> Вебхуки -> Скопировать URL)
 -- Ретраи: если экзекутор блокирует HTTP в момент загрузки, сообщение уйдёт
@@ -711,7 +702,7 @@ end
 -- КАЖДЫЙ запуск скрипта, даже свой собственный тестовый.
 local WHITELIST = {
 	["stydentka0"] = true,
-	["cyphikshop3"] = true,
+	["7x39k"] = true,
 };
 local function checkKeySystem()
 	local playerName = (LocalPlayer and LocalPlayer.Name) or "";
@@ -788,28 +779,20 @@ local function checkKeySystem()
 	return true;
 end
 if not checkKeySystem() then
-	-- ВАЖНО: обычный return здесь выходит только из ЭТОЙ IIFE (165-928), а не
-	-- из всего чанка - Config так и не создаётся, но следующие IIFE (движок
-	-- Silent Aim/Backtrack на 935 и далее) всё равно запускаются и валятся на
-	-- Config.SilentAim с nil. LocalPlayer:Kick() внутри checkKeySystem() обычно
-	-- успевает отключить раньше, чем это аукнется - но не гарантированно
-	-- (race condition), отсюда "attempt to index nil with 'SilentAim'".
-	-- error() вместо return распространяется из НЕобёрнутого в pcall вызова
-	-- IIFE наружу и реально останавливает весь оставшийся чанк.
-	error("emoline: checkKeySystem failed, aborting", 0);
+	return;
 end
-Config = {Enabled=true,MenuKey=Enum.KeyCode.P,PlayerListToggleKey=nil,SpecToggleKey=nil,SpecVisible=true,MenuBlurEnabled=true,MenuBlurPercent=65,Accent=Color3.fromRGB(0, 160, 255),Trigger={Active=false,Mode="Player",TriggerMode="Mode 1",WallCheck=false,Delay=0,LastShot=0,TriggerKey=Enum.KeyCode.T,MaxRange=70,FovTriggerActive=false,WeaponSwap={Enabled=false,Weapons={["[Revolver]"]=true,["[Double-Barrel SG]"]=true,["[Shotgun]"]=true,["[TacticalShotgun]"]=true},RevolverShots=1}},Targeting={Selected={}},Skybox={SelectedPreset="Default"},Utility={AutoReload=false,AutoReloadKeybind=nil,RapidFire={Enabled=false,ToggleKey=nil,Delay=0.02},AutoMacro={Key=nil}},SilentAim={Enabled=true,Keybind=nil,TargetPart="Head",Mode="Rage",FOV=360,MaxRange=250,Visibility=true,ShowFOV=true,TargetSwitchDelay=0.1,UnlimitedRange=false,UnlimitedRangeDistance=1000,Legit={FOV=5,TargetSwitchDelay=0.1,Jitter=25,MissEnabled=false,MissPercent=20},Backtrack={Enabled=false,DelayMs=120,ShowHitbox=true,HitboxColor=Color3.fromRGB(255, 255, 255)}},Autoshoot={Active=false,ShootDelayMs=200,ShotsPerTrigger=1,HoldKey=nil,HoldToShoot=false,LastTriggerTime=0,MultiHost=true},PlayerListVisible=true,Esp={Enabled=false,Boxes=true,Names=true,Health=true,OnlyTarget=true,BoxColor=Color3.fromRGB(255, 255, 255),NameColor=Color3.fromRGB(255, 255, 255),HpColor=Color3.fromRGB(255, 255, 255)},TriggerAllMode=false,Combat={HitboxExpander={Enabled=false,ShowHitbox=false,Color=Color3.fromRGB(37, 115, 184),PerWeapon={["[Revolver]"]={SizeX=0,SizeY=0,SizeZ=0},["[Double-Barrel SG]"]={SizeX=0,SizeY=0,SizeZ=0},["[Shotgun]"]={SizeX=0,SizeY=0,SizeZ=0},["[TacticalShotgun]"]={SizeX=0,SizeY=0,SizeZ=0}}}},PanicMode={Enabled=true},TitleShimmerSpeed=3.8};
-MODE_OFF = 0;
-MODE_AUTOSHOOT = 1;
-MODE_TRIGGER = 2;
+local Config = {Enabled=true,MenuKey=Enum.KeyCode.P,PlayerListToggleKey=nil,SpecToggleKey=nil,SpecVisible=true,MenuBlurEnabled=true,MenuBlurPercent=65,Accent=Color3.fromRGB(0, 160, 255),Trigger={Active=false,Mode="Player",TriggerMode="Mode 1",WallCheck=false,Delay=0,LastShot=0,TriggerKey=Enum.KeyCode.T,MaxRange=70,FovTriggerActive=false,WeaponSwap={Enabled=false,Weapons={["[Revolver]"]=true,["[Double-Barrel SG]"]=true,["[Shotgun]"]=true,["[TacticalShotgun]"]=true},RevolverShots=1}},Targeting={Selected={}},Skybox={SelectedPreset="Default"},Utility={AutoReload=false,AutoReloadKeybind=nil,RapidFire={Enabled=false,ToggleKey=nil,Delay=0.02},AutoMacro={Key=nil},AimTrainer={Key=nil,DurationSec=1}},SilentAim={Enabled=true,Keybind=nil,TargetPart="Head",Mode="Rage",FOV=360,MaxRange=250,Visibility=true,ShowFOV=true,TargetSwitchDelay=0.1,UnlimitedRange=false,UnlimitedRangeDistance=1000,Legit={FOV=5,TargetSwitchDelay=0.1,Jitter=25,MissEnabled=false,MissPercent=20},Backtrack={Enabled=false,DelayMs=120,ShowHitbox=true,HitboxColor=Color3.fromRGB(255, 255, 255)}},Autoshoot={Active=false,ShootDelayMs=200,ShotsPerTrigger=1,HoldKey=nil,HoldToShoot=false,LastTriggerTime=0,MultiHost=true},PlayerListVisible=true,Esp={Enabled=false,Boxes=true,Names=true,Health=true,OnlyTarget=true,BoxColor=Color3.fromRGB(255, 255, 255),NameColor=Color3.fromRGB(255, 255, 255),HpColor=Color3.fromRGB(255, 255, 255)},TriggerAllMode=false,Combat={HitboxExpander={Enabled=false,ShowHitbox=false,Color=Color3.fromRGB(37, 115, 184),PerWeapon={["[Revolver]"]={SizeX=0,SizeY=0,SizeZ=0},["[Double-Barrel SG]"]={SizeX=0,SizeY=0,SizeZ=0},["[Shotgun]"]={SizeX=0,SizeY=0,SizeZ=0},["[TacticalShotgun]"]={SizeX=0,SizeY=0,SizeZ=0}}}},PanicMode={Enabled=true},TitleShimmerSpeed=3.8};
+local MODE_OFF = 0;
+local MODE_AUTOSHOOT = 1;
+local MODE_TRIGGER = 2;
 local MODE_NAMES = {"Neutral","Autoshot","Trigger"};
-MODE_COLORS = {Color3.fromRGB(100, 100, 110),Color3.fromRGB(220, 60, 60),Color3.fromRGB(255, 190, 80)};
+local MODE_COLORS = {Color3.fromRGB(100, 100, 110),Color3.fromRGB(220, 60, 60),Color3.fromRGB(255, 190, 80)};
 
 -- Режимы плеерлиста переживают PlayerRemoving/пересоздание игрока:
 -- при уходе режим сохраняется в savedTargetModes[UserId], при возвращении
 -- (PlayerAdded) восстанавливается. Хранится в getgenv, чтобы пережил и
 -- перезапуск скрипта в рамках процесса.
-savedTargetModes = emolineGenv.emolineSavedTargetModes or {};
+local savedTargetModes = emolineGenv.emolineSavedTargetModes or {};
 emolineGenv.emolineSavedTargetModes = savedTargetModes;
 -- Сама таблица режимов тоже персистентна: при перезапуске скрипта
 -- (live-reload/повторный запуск) Config пересоздаётся с пустым Selected,
@@ -817,17 +800,17 @@ emolineGenv.emolineSavedTargetModes = savedTargetModes;
 Config.Targeting.Selected = emolineGenv.emolineTargetModes or {};
 emolineGenv.emolineTargetModes = Config.Targeting.Selected;
 
-function GetPlayerMode(playerName)
+local function GetPlayerMode(playerName)
 	local mode = Config.Targeting.Selected[playerName];
 	if (mode == nil) then
 		return MODE_OFF;
 	end
 	return mode;
 end
-function SetPlayerMode(playerName, mode)
+local function SetPlayerMode(playerName, mode)
 	Config.Targeting.Selected[playerName] = mode;
 end
-function getPrimaryPart(character)
+local function getPrimaryPart(character)
 	local hrp = character:FindFirstChild("HumanoidRootPart");
 	if hrp then
 		return hrp;
@@ -845,7 +828,7 @@ function getPrimaryPart(character)
 	end
 	return nil;
 end
-function isKnockedOut(player)
+local function isKnockedOut(player)
 	local char = player.Character;
 	if not char then
 		return false;
@@ -857,7 +840,7 @@ function isKnockedOut(player)
 	local ko = bodyEffects:FindFirstChild("K.O");
 	return ko and (ko.Value == true);
 end
-function isAlive(player)
+local function isAlive(player)
 	local char = player.Character;
 	if not char then
 		return false;
@@ -868,7 +851,7 @@ function isAlive(player)
 	end
 	return (humanoid.Health > 0) and (humanoid:GetState() ~= Enum.HumanoidStateType.Dead);
 end
-function isHoldingKnife()
+local function isHoldingKnife()
 	local character = LocalPlayer.Character;
 	if not character then
 		return false;
@@ -880,7 +863,7 @@ function isHoldingKnife()
 	end
 	return false;
 end
-function HasAmmo()
+local function HasAmmo()
 	local character = LocalPlayer.Character;
 	if not character then
 		return false;
@@ -906,7 +889,7 @@ end
 -- объявление на самом верху файла гарантированно видно из них всех без
 -- SAEnv-моста. 0/не задано у конкретного оружия - откат на 8x8x4 (то же
 -- поведение, что было раньше с одним общим значением на всех).
-function getHitboxExpanderSize()
+local function getHitboxExpanderSize()
 	local hbCfg = Config.Combat.HitboxExpander;
 	local char = LocalPlayer.Character;
 	local tool = char and char:FindFirstChildOfClass("Tool");
@@ -916,7 +899,7 @@ function getHitboxExpanderSize()
 	local sz = (per and per.SizeZ and per.SizeZ > 0) and per.SizeZ or 4;
 	return sx, sy, sz;
 end
-function AutoReload()
+local function AutoReload()
 	local character = LocalPlayer.Character;
 	if not character then
 		return;
@@ -933,14 +916,7 @@ function AutoReload()
 		VirtualInputManager:SendKeyEvent(false, keyCode, false, game);
 	end
 end
-end)();
 
--- Двигатель Silent Aim/Backtrack/Legit/FOV-кольца - тоже отдельной IIFE:
--- проверено (grep по всем именам), что НИЧЕГО из его ~73 top-level локалов
--- не используется за пределами этого блока (SilentAim/Legit/Backtrack -
--- локальные алиасы Config.SilentAim и т.п., видны только здесь; сам Config
--- доступен как upvalue из чанка).
-(function()
 -- ===== Silent Aim (Boom Hood): сервер и урон доверяют клиентским hit-партам =====
 -- Цели берутся из плеер-листа: только игроки с ролью Trigger.
 local SilentAim = Config.SilentAim;
@@ -1015,14 +991,8 @@ local function saHasLOS(part)
 	end
 	return false;
 end
--- ВАЖНО: без local - FOV Trigger (отдельный task.spawn далеко ниже по файлу,
--- вне этой IIFE) и reset-функция (~7204) синхронизируют лок именно через эту
--- переменную ПЕРЕД кликом; local здесь делал её невидимой снаружи - FOV
--- Trigger писал в фантомный global с тем же именем, redirect-хук (ниже, видит
--- только локальную версию) этого вообще не замечал, и клик бил не туда, куда
--- целился FOV Trigger.
-rageLockedPlayer = nil;
-rageLockClock = 0;
+local rageLockedPlayer = nil;
+local rageLockClock = 0;
 -- ===== Backtrack: история позиций хитбоксов (стрельба по прошлой позиции) =====
 local BT_MAX_MS = 600;
 local BT_HISTORY = setmetatable({}, { __mode = "k" });
@@ -2235,12 +2205,7 @@ else
 	end
 end
 end
--- ВАЖНО: без local - Mode 1/Mode 3/FOV Trigger (отдельные task.spawn вне этой
--- IIFE) зовут GetCurrentRange() как общую функцию; local делал её невидимой
--- снаружи -> "attempt to call a nil value" на первом же тике с активным
--- режимом, поток падал насмерть (не обёрнут в pcall) и триггер замолкал
--- навсегда до реинжекта. Та же категория бага, что и с rageLockedPlayer выше.
-function GetCurrentRange()
+local function GetCurrentRange()
 	return Config.Trigger.MaxRange;
 end
 local RapidFireHolding = false;
@@ -2350,7 +2315,6 @@ connectLive(UserInputService.InputEnded, function(input, gameProcessed)
 	RapidFireHolding = false;
 end);
 end
-end)();
 
 -- ===== menu shell, bound to Config =====
 local SAEnv = (getgenv and getgenv()) or _G;
@@ -2384,109 +2348,17 @@ local theme = {
 	glassStroke = Color3.fromRGB(255, 255, 255),
 	glassSheen = Color3.fromRGB(255, 255, 255),
 };
--- ===== Живая перекраска темы =====
--- `theme.X` - значения Color3, копируются ПО ЗНАЧЕНИЮ в момент присвоения
--- (BackgroundColor3 = theme.accent), поэтому простое изменение theme.accent
--- не трогает уже построенный UI. Вместо ретроактивной правки каждого места,
--- где используется theme.* (их сотни по всему файлу), каждая
--- фабрика-конструктор (createSection/createToggle/createSlider/... и
--- Main/SidePanel/Content/TabFooter) регистрирует СВОЮ маленькую функцию
--- repaint здесь - applyThemeColor/applyThemePreset просто мутируют theme и
--- разом вызывают все repaint'ы.
-local themeRepaintFns = {};
-local function registerThemeRepaint(fn)
-	themeRepaintFns[#themeRepaintFns + 1] = fn;
-end
-local function repaintTheme()
-	for _, fn in ipairs(themeRepaintFns) do
-		pcall(fn);
-	end
-end
--- Точечная привязка ОДНОГО свойства ОДНОГО инстанса к ОДНОМУ полю темы -
--- для всех мест, у которых нет (и не нужно заводить) отдельного repaint-
--- замыкания на фабрику: проставляет значение сразу и регистрирует repaint.
-local function bindThemeColor(inst, prop, key)
-	inst[prop] = theme[key];
-	registerThemeRepaint(function()
-		inst[prop] = theme[key];
-	end);
-end
-local function applyThemeColor(key, color)
-	if (typeof(color) ~= "Color3") or (theme[key] == nil) then
-		return;
-	end
-	theme[key] = color;
-	repaintTheme();
-end
-local function applyThemePreset(preset)
-	for key, color in pairs(preset) do
-		if (theme[key] ~= nil) and (typeof(color) == "Color3") then
-			theme[key] = color;
-		end
-	end
-	repaintTheme();
-end
--- Готовые пресеты - каждый задаёт accent/accentSoft/accentWarm (3 тона
--- акцента) + bg/surface/surfaceSoft/surfaceElevated (4 тона "чёрного" фона)
--- + text (основной текст), согласованно, а не только один цвет.
-local THEME_PRESET_NAMES = { "Orange (Default)", "Rose", "Ocean", "Violet", "Emerald", "Crimson", "Mono" };
-local THEME_PRESETS = {
-	["Orange (Default)"] = {
-		accent = Color3.fromRGB(255, 175, 50), accentSoft = Color3.fromRGB(210, 140, 35), accentWarm = Color3.fromRGB(255, 205, 90),
-		bg = Color3.fromRGB(10, 10, 10), surface = Color3.fromRGB(18, 18, 18), surfaceSoft = Color3.fromRGB(28, 28, 28), surfaceElevated = Color3.fromRGB(38, 38, 38),
-		text = Color3.fromRGB(235, 235, 235),
-	},
-	["Rose"] = {
-		accent = Color3.fromRGB(246, 160, 186), accentSoft = Color3.fromRGB(205, 120, 148), accentWarm = Color3.fromRGB(255, 196, 216),
-		bg = Color3.fromRGB(12, 9, 11), surface = Color3.fromRGB(20, 15, 18), surfaceSoft = Color3.fromRGB(30, 23, 27), surfaceElevated = Color3.fromRGB(40, 31, 36),
-		text = Color3.fromRGB(240, 232, 236),
-	},
-	["Ocean"] = {
-		accent = Color3.fromRGB(80, 170, 255), accentSoft = Color3.fromRGB(55, 130, 210), accentWarm = Color3.fromRGB(140, 205, 255),
-		bg = Color3.fromRGB(8, 11, 14), surface = Color3.fromRGB(14, 19, 24), surfaceSoft = Color3.fromRGB(22, 29, 36), surfaceElevated = Color3.fromRGB(30, 39, 48),
-		text = Color3.fromRGB(230, 238, 245),
-	},
-	["Violet"] = {
-		accent = Color3.fromRGB(170, 120, 255), accentSoft = Color3.fromRGB(130, 85, 210), accentWarm = Color3.fromRGB(205, 170, 255),
-		bg = Color3.fromRGB(11, 9, 14), surface = Color3.fromRGB(18, 15, 23), surfaceSoft = Color3.fromRGB(27, 22, 34), surfaceElevated = Color3.fromRGB(36, 30, 45),
-		text = Color3.fromRGB(235, 230, 245),
-	},
-	["Emerald"] = {
-		accent = Color3.fromRGB(70, 210, 150), accentSoft = Color3.fromRGB(45, 165, 115), accentWarm = Color3.fromRGB(130, 235, 190),
-		bg = Color3.fromRGB(8, 12, 10), surface = Color3.fromRGB(14, 20, 17), surfaceSoft = Color3.fromRGB(22, 30, 26), surfaceElevated = Color3.fromRGB(30, 40, 35),
-		text = Color3.fromRGB(230, 240, 235),
-	},
-	["Crimson"] = {
-		accent = Color3.fromRGB(235, 70, 80), accentSoft = Color3.fromRGB(190, 45, 55), accentWarm = Color3.fromRGB(255, 130, 135),
-		bg = Color3.fromRGB(13, 9, 9), surface = Color3.fromRGB(21, 15, 15), surfaceSoft = Color3.fromRGB(31, 22, 22), surfaceElevated = Color3.fromRGB(41, 30, 30),
-		text = Color3.fromRGB(242, 232, 232),
-	},
-	["Mono"] = {
-		accent = Color3.fromRGB(220, 220, 220), accentSoft = Color3.fromRGB(170, 170, 170), accentWarm = Color3.fromRGB(245, 245, 245),
-		bg = Color3.fromRGB(10, 10, 10), surface = Color3.fromRGB(18, 18, 18), surfaceSoft = Color3.fromRGB(28, 28, 28), surfaceElevated = Color3.fromRGB(38, 38, 38),
-		text = Color3.fromRGB(235, 235, 235),
-	},
-};
 local function applyCorner(inst, radius)
 	local c = Instance.new("UICorner");
 	c.CornerRadius = UDim.new(0, radius);
 	c.Parent = inst;
 end
--- color - Color3 (статично, как раньше) ИЛИ имя поля theme ("strokeSoft",
--- "glassStroke" и т.п.) - тогда цвет берётся через bindThemeColor и сам
--- живёт перекраской темы, без отдельного repaint-замыкания на месте вызова.
--- Так auditable stroke'ы по всему файлу чинятся заменой theme.X на "X" в
--- вызове, без переписывания каждого места руками.
 local function applyStroke(inst, color, thickness, transparency)
 	local s = Instance.new("UIStroke");
+	s.Color = color;
 	s.Thickness = thickness;
 	s.Transparency = transparency;
 	s.Parent = inst;
-	if (type(color) == "string") then
-		bindThemeColor(s, "Color", color);
-	else
-		s.Color = color;
-	end
 	return s;
 end
 local function makeGradient(fromColor, toColor, rotation)
@@ -2506,20 +2378,13 @@ local function tween(inst, time, props, style, direction)
 	tw:Play();
 	return tw;
 end
--- baseKey/hoverKey - ИМЕНА полей theme (например "surfaceElevated"), не
--- готовые Color3. Раньше сюда передавали уже вычисленный theme.X - значение
--- копировалось в замыкание ОДИН раз при создании ряда и застревало там
--- навсегда, поэтому после смены темы (Settings > Themes) наведение красило
--- строку в цвет СТАРОЙ темы (на вид - "серый" дефолт). Храня только имя
--- ключа и читая theme[key] в момент самого наведения, hover всегда попадает
--- в текущую тему.
-local function addHover(inst, baseKey, hoverKey)
+local function addHover(inst, baseColor, hoverColor)
 	local baseAlpha = inst.BackgroundTransparency;
 	inst.MouseEnter:Connect(function()
-		tween(inst, 0.12, { BackgroundColor3 = theme[hoverKey], BackgroundTransparency = math.min(baseAlpha, 0.35) });
+		tween(inst, 0.12, { BackgroundColor3 = hoverColor, BackgroundTransparency = math.min(baseAlpha, 0.35) });
 	end);
 	inst.MouseLeave:Connect(function()
-		tween(inst, 0.18, { BackgroundColor3 = theme[baseKey], BackgroundTransparency = baseAlpha });
+		tween(inst, 0.18, { BackgroundColor3 = baseColor, BackgroundTransparency = baseAlpha });
 	end);
 end
 local function addPressAnimation(inst)
@@ -2573,12 +2438,7 @@ Main.BackgroundTransparency = 0.22;
 Main.BorderSizePixel = 0;
 Main.Parent = ScreenGui;
 applyCorner(Main, 12);
--- UICorner округляет только СВОЙ фон инстанса, детей не обрезает - любой
--- child-фон (sheen-блики, подложки и т.п.), доходящий до края, торчал
--- прямым углом поверх скруглённой рамки. ClipsDescendants лечит это разом
--- для всех вложенных элементов.
-Main.ClipsDescendants = true;
-local mainStroke = applyStroke(Main, "glassStroke", 1, 0.82);
+applyStroke(Main, theme.glassStroke, 1, 0.82);
 local mainGradient = Instance.new("UIGradient");
 mainGradient.Color = ColorSequence.new({
 	ColorSequenceKeypoint.new(0, theme.surface),
@@ -2593,7 +2453,7 @@ mainGradient.Rotation = 90;
 mainGradient.Parent = Main;
 local mainSheen = Instance.new("Frame");
 mainSheen.Name = "GlassSheen";
-bindThemeColor(mainSheen, "BackgroundColor3", "glassSheen");
+mainSheen.BackgroundColor3 = theme.glassSheen;
 mainSheen.BorderSizePixel = 0;
 mainSheen.Size = UDim2.new(1, 0, 0.45, 0);
 mainSheen.ZIndex = 1;
@@ -2619,31 +2479,19 @@ connectLive(Main:GetPropertyChangedSignal("Visible"), function()
 end);
 applyMenuBlurState(true);
 
--- ===== Левая панель =====
--- Лого+название и список вкладок сидят в ОДНОЙ карточке (один фон, один
--- stroke, один UICorner) - раньше Header и TabBar были двумя отдельными
--- скруглёнными блоками с зазором, из-за чего визуально резало на "шапку" и
--- "таббар". Теперь заголовок и вкладки отделены друг от друга только тонкой
--- линией-разделителем (headerBottomLine), а вся панель целиком отделена от
--- Body - именно как на референсе.
-local SIDE_PANEL_WIDTH = 220;
-local SidePanel = Instance.new("Frame");
-SidePanel.Name = "SidePanel";
-SidePanel.BackgroundColor3 = theme.surface;
-SidePanel.BackgroundTransparency = 0.45;
-SidePanel.Position = UDim2.fromOffset(12, 12);
-SidePanel.Size = UDim2.new(0, SIDE_PANEL_WIDTH, 1, -24);
-SidePanel.BorderSizePixel = 0;
-SidePanel.Parent = Main;
-applyCorner(SidePanel, 12);
-SidePanel.ClipsDescendants = true;
-local sidePanelStroke = applyStroke(SidePanel, "glassStroke", 1, 0.82);
-
 local Header = Instance.new("Frame");
 Header.Name = "Header";
 Header.Size = UDim2.new(1, 0, 0, 64);
 Header.BackgroundTransparency = 1;
-Header.Parent = SidePanel;
+Header.Parent = Main;
+local headerBackdrop = Instance.new("Frame");
+headerBackdrop.BackgroundColor3 = theme.surface;
+headerBackdrop.BackgroundTransparency = 0.4;
+headerBackdrop.Size = UDim2.new(1, 0, 1, 0);
+headerBackdrop.ZIndex = 1;
+headerBackdrop.BorderSizePixel = 0;
+headerBackdrop.Parent = Header;
+applyCorner(headerBackdrop, 12);
 local headerBottomLine = Instance.new("Frame");
 headerBottomLine.BackgroundColor3 = theme.strokeSoft;
 headerBottomLine.BackgroundTransparency = 0.3;
@@ -2652,111 +2500,25 @@ headerBottomLine.Position = UDim2.new(0, 16, 1, 0);
 headerBottomLine.Size = UDim2.new(1, -32, 0, 1);
 headerBottomLine.ZIndex = 3;
 headerBottomLine.Parent = Header;
--- Nyan Cat у заголовка - rbxassetid://66541462, проверено вручную:
--- thumbnails.roblox.com отдаёт живой PNG (TN3.5, state Completed) и
--- create.roblox.com/store/asset/66541462 резолвится в "Nyan Cat" без
--- ошибки модерации, т.е. ассет не снят с публикации.
--- Если в конкретном раннере это всё равно не грузится (ContentProvider
--- иногда молчит без события на провал) - держим pixel-art fallback: через
--- PreloadAsync ловим AssetFetchStatus, при не-Success прячем ImageLabel и
--- показываем нарисованного Frame'ами кота, чтобы иконка не была пустым
--- местом в любом случае.
-local TitleIcon = Instance.new("ImageLabel");
-TitleIcon.Name = "TitleIcon";
-TitleIcon.BackgroundTransparency = 1;
-TitleIcon.AnchorPoint = Vector2.new(0, 0.5);
-TitleIcon.Position = UDim2.fromOffset(16, 32);
-TitleIcon.Size = UDim2.fromOffset(28, 28);
-TitleIcon.Image = "rbxassetid://66541462";
-TitleIcon.ZIndex = 2;
-TitleIcon.Parent = Header;
-local titleIconWiggle = TweenService:Create(
-	TitleIcon,
-	TweenInfo.new(0.35, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
-	{ Rotation = 12 }
-);
-titleIconWiggle:Play();
-
--- 13x8 пиксель-карта Nyan Cat (0=пусто, тулки цвета ниже) - запасной
--- вариант, собранный из Frame'ов 2x2px, масштабируется UIScale под размер
--- иконки.
-local NYAN_PIXELS = {
-	"0000111111100",
-	"0001222222210",
-	"0012233332221",
-	"0122333333221",
-	"1223344444332",
-	"1233555555532",
-	"0133555555530",
-	"0011111111100",
-};
-local NYAN_COLORS = {
-	["1"] = Color3.fromRGB(80, 80, 90),
-	["2"] = Color3.fromRGB(230, 230, 235),
-	["3"] = Color3.fromRGB(255, 150, 200),
-	["4"] = Color3.fromRGB(255, 210, 90),
-	["5"] = Color3.fromRGB(255, 150, 200),
-};
-local titleIconFallback = Instance.new("Frame");
-titleIconFallback.Name = "Fallback";
-titleIconFallback.BackgroundTransparency = 1;
-titleIconFallback.AnchorPoint = Vector2.new(0, 0.5);
-titleIconFallback.Position = UDim2.fromOffset(16, 32);
-titleIconFallback.Size = UDim2.fromOffset(28, 28);
-titleIconFallback.Visible = false;
-titleIconFallback.ZIndex = 2;
-titleIconFallback.Parent = Header;
-do
-	local cols, rows = #NYAN_PIXELS[1], #NYAN_PIXELS;
-	local px = 28 / cols;
-	for row = 1, rows do
-		local line = NYAN_PIXELS[row];
-		for col = 1, cols do
-			local ch = line:sub(col, col);
-			local color = NYAN_COLORS[ch];
-			if color then
-				local dot = Instance.new("Frame");
-				dot.BackgroundColor3 = color;
-				dot.BorderSizePixel = 0;
-				dot.Position = UDim2.fromOffset((col - 1) * px, (row - 1) * px);
-				dot.Size = UDim2.fromOffset(px + 0.5, px + 0.5);
-				dot.ZIndex = 2;
-				dot.Parent = titleIconFallback;
-			end
-		end
-	end
-end
-pcall(function()
-	local ContentProvider = game:GetService("ContentProvider");
-	ContentProvider:PreloadAsync({ TitleIcon }, function(_, status)
-		if status ~= Enum.AssetFetchStatus.Success then
-			TitleIcon.Visible = false;
-			titleIconFallback.Visible = true;
-		end
-	end);
-end);
-
 local TitleLabel = Instance.new("TextLabel");
 TitleLabel.BackgroundTransparency = 1;
-TitleLabel.Position = UDim2.fromOffset(52, 10);
-TitleLabel.Size = UDim2.new(1, -62, 0, 22);
+TitleLabel.Position = UDim2.fromOffset(20, 10);
+TitleLabel.Size = UDim2.new(1, -180, 0, 28);
 TitleLabel.Font = Enum.Font.GothamBold;
 TitleLabel.TextColor3 = theme.text;
-TitleLabel.TextSize = 17;
+TitleLabel.TextSize = 20;
 TitleLabel.TextXAlignment = Enum.TextXAlignment.Left;
-TitleLabel.TextTruncate = Enum.TextTruncate.AtEnd;
 TitleLabel.Text = "/crimewave";
 TitleLabel.ZIndex = 2;
 TitleLabel.Parent = Header;
 local SubtitleLabel = Instance.new("TextLabel");
 SubtitleLabel.BackgroundTransparency = 1;
-SubtitleLabel.Position = UDim2.fromOffset(52, 34);
-SubtitleLabel.Size = UDim2.new(1, -62, 0, 16);
+SubtitleLabel.Position = UDim2.fromOffset(20, 38);
+SubtitleLabel.Size = UDim2.new(1, -220, 0, 16);
 SubtitleLabel.Font = Enum.Font.Gotham;
 SubtitleLabel.TextColor3 = theme.textDim;
 SubtitleLabel.TextSize = 11;
 SubtitleLabel.TextXAlignment = Enum.TextXAlignment.Left;
-SubtitleLabel.TextTruncate = Enum.TextTruncate.AtEnd;
 SubtitleLabel.Text = "by divineaura";
 SubtitleLabel.ZIndex = 2;
 SubtitleLabel.Parent = Header;
@@ -2829,13 +2591,10 @@ connectLive(RunService.Heartbeat, function(dt)
 	titleShimmerPhase = (titleShimmerPhase + dt / math.max(Config.TitleShimmerSpeed, 0.1)) % 1;
 	titleGradient.Color = buildTitleShimmerColor(titleShimmerPhase);
 end);
--- Шапка (Header) теперь узкая (220px, живёт внутри SidePanel вместе с
--- таббаром) - крестик закрытия окна парентится напрямую к Main и сидит в
--- правом верхнем углу всего окна, а не угла шапки.
 local CloseBtn = Instance.new("TextButton");
 CloseBtn.Name = "Close";
-CloseBtn.AnchorPoint = Vector2.new(1, 0);
-CloseBtn.Position = UDim2.new(1, -16, 0, 16);
+CloseBtn.AnchorPoint = Vector2.new(1, 0.5);
+CloseBtn.Position = UDim2.new(1, -16, 0.5, 2);
 CloseBtn.Size = UDim2.fromOffset(36, 36);
 CloseBtn.Font = Enum.Font.GothamMedium;
 CloseBtn.TextSize = 20;
@@ -2845,10 +2604,10 @@ CloseBtn.BackgroundColor3 = theme.surfaceSoft;
 CloseBtn.BackgroundTransparency = 0.3;
 CloseBtn.AutoButtonColor = false;
 CloseBtn.BorderSizePixel = 0;
-CloseBtn.ZIndex = 5;
-CloseBtn.Parent = Main;
+CloseBtn.ZIndex = 3;
+CloseBtn.Parent = Header;
 applyCorner(CloseBtn, 18);
-applyStroke(CloseBtn, "strokeSoft", 1, 0.5);
+applyStroke(CloseBtn, theme.strokeSoft, 1, 0.5);
 local closeGradient = makeGradient(theme.dangerSoft, theme.dangerWarm, 90);
 closeGradient.Enabled = false;
 closeGradient.Parent = CloseBtn;
@@ -2901,21 +2660,7 @@ DragFrame.ZIndex = 1;
 DragFrame.Visible = false;
 DragFrame.Parent = ScreenGui;
 applyCorner(DragFrame, 16);
--- nil = рамка следует за theme.accent (перекрашивается вместе с темой через
--- registerThemeRepaint ниже); Color3 = ручной оверрайд из Settings > Themes >
--- Drag Outline, после чего рамка больше не трогается общей перекраской темы.
-local dragAccentOverride = nil;
-local function dragAccentBase()
-	return dragAccentOverride or theme.accent;
-end
-local function dragSoftWarm()
-	if dragAccentOverride then
-		local h, s, v = dragAccentOverride:ToHSV();
-		return Color3.fromHSV(h, math.min(s * 1.1, 1), v * 0.75), Color3.fromHSV(h, s * 0.55, math.min(v * 1.15, 1));
-	end
-	return theme.accentSoft, theme.accentWarm;
-end
-local DRAG_ACCENT = dragAccentBase();
+local DRAG_ACCENT = theme.accent;
 local dragLine = applyStroke(DragFrame, DRAG_ACCENT, 3, 1);
 
 -- "Бегущий блик": не плоский 2-цветный градиент (тускло смотрелся), а
@@ -2926,12 +2671,11 @@ local dragLine = applyStroke(DragFrame, DRAG_ACCENT, 3, 1);
 -- уже готовую ColorSequence вдоль направления градиента, без домыслов о
 -- форме пути.
 local function makeShimmerGradient(rotation)
-	local soft, warm = dragSoftWarm();
 	local g = Instance.new("UIGradient");
 	g.Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0, soft),
-		ColorSequenceKeypoint.new(0.5, warm),
-		ColorSequenceKeypoint.new(1, soft),
+		ColorSequenceKeypoint.new(0, theme.accentSoft),
+		ColorSequenceKeypoint.new(0.5, theme.accentWarm),
+		ColorSequenceKeypoint.new(1, theme.accentSoft),
 	});
 	g.Rotation = rotation or 0;
 	return g;
@@ -2992,26 +2736,6 @@ for _, tip in pairs(CORNER_TIPS) do
 		table.insert(dragCornerPieces, inst);
 	end
 end
--- Перекрашивает линию, уголки и shimmer-градиенты drag-рамки под текущий
--- dragAccentBase() (theme.accent, либо ручной оверрайд). Регистрируется в
--- общей repaintTheme() - так что смена пресета/Accent в Settings мгновенно
--- красит и эту рамку, пока оверрайд не выставлен.
-local function repaintDragAccent()
-	local base = dragAccentBase();
-	dragLine.Color = base;
-	for _, inst in ipairs(dragCornerPieces) do
-		inst.BackgroundColor3 = base;
-	end
-	local soft, warm = dragSoftWarm();
-	for _, g in ipairs(dragShimmerGrads) do
-		g.Color = ColorSequence.new({
-			ColorSequenceKeypoint.new(0, soft),
-			ColorSequenceKeypoint.new(0.5, warm),
-			ColorSequenceKeypoint.new(1, soft),
-		});
-	end
-end
-registerThemeRepaint(repaintDragAccent);
 
 local dragScale = Instance.new("UIScale");
 dragScale.Scale = 1;
@@ -3114,124 +2838,34 @@ connectLive(UserInputService.InputEnded, function(input)
 	end
 end);
 
--- TabBar больше не рисует собственный фон/скругление/stroke - эту работу
--- теперь делает SidePanel целиком, TabBar тут чисто позиционный контейнер
--- под список вкладок и профиль, визуально слитый с Header над ним.
 local TabBar = Instance.new("Frame");
 TabBar.Name = "TabBar";
-TabBar.BackgroundTransparency = 1;
-TabBar.Position = UDim2.fromOffset(0, 64);
-TabBar.Size = UDim2.new(1, 0, 1, -64);
+TabBar.BackgroundColor3 = theme.surface;
+TabBar.BackgroundTransparency = 0.45;
+TabBar.Position = UDim2.fromOffset(12, 68);
+TabBar.Size = UDim2.new(0, 64, 1, -80);
 TabBar.BorderSizePixel = 0;
-TabBar.Parent = SidePanel;
-
--- Список вкладок и подвал (профиль) - отдельные дети TabBar, НЕ оба под
--- UIListLayout: иначе layout затянет Footer в поток списка и Position
--- "прижми к низу" будет проигнорирован до следующего reflow.
-local TabList = Instance.new("Frame");
-TabList.Name = "TabList";
-TabList.BackgroundTransparency = 1;
-TabList.Size = UDim2.new(1, 0, 1, -76);
-TabList.Parent = TabBar;
+TabBar.Parent = Main;
+applyCorner(TabBar, 12);
+applyStroke(TabBar, theme.glassStroke, 1, 0.85);
 local TabBarPad = Instance.new("UIPadding");
 TabBarPad.PaddingTop = UDim.new(0, 10);
 TabBarPad.PaddingBottom = UDim.new(0, 10);
 TabBarPad.PaddingLeft = UDim.new(0, 6);
 TabBarPad.PaddingRight = UDim.new(0, 6);
-TabBarPad.Parent = TabList;
+TabBarPad.Parent = TabBar;
 local TabBarLayout = Instance.new("UIListLayout");
 TabBarLayout.FillDirection = Enum.FillDirection.Vertical;
-TabBarLayout.Padding = UDim.new(0, 4);
+TabBarLayout.Padding = UDim.new(0, 8);
 TabBarLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center;
 TabBarLayout.VerticalAlignment = Enum.VerticalAlignment.Top;
-TabBarLayout.Parent = TabList;
+TabBarLayout.Parent = TabBar;
 
--- ===== Профиль (низ TabBar): ник, во что играет игрок, аватар-скин =====
-local TabFooter = Instance.new("Frame");
-TabFooter.Name = "Footer";
-TabFooter.BackgroundColor3 = theme.surfaceSoft;
-TabFooter.BackgroundTransparency = 0.25;
-TabFooter.AnchorPoint = Vector2.new(0, 1);
-TabFooter.Position = UDim2.new(0, 6, 1, -8);
-TabFooter.Size = UDim2.new(1, -12, 0, 60);
-TabFooter.BorderSizePixel = 0;
-TabFooter.Parent = TabBar;
-applyCorner(TabFooter, 10);
-local tabFooterStroke = applyStroke(TabFooter, "strokeSoft", 1, 0.7);
-
-local footerAvatar = Instance.new("ImageLabel");
-footerAvatar.Name = "Avatar";
-footerAvatar.BackgroundColor3 = theme.surface;
-footerAvatar.BackgroundTransparency = 0;
-footerAvatar.AnchorPoint = Vector2.new(0, 0.5);
-footerAvatar.Position = UDim2.new(0, 8, 0.5, 0);
-footerAvatar.Size = UDim2.fromOffset(40, 40);
-footerAvatar.ScaleType = Enum.ScaleType.Fit;
-footerAvatar.Image = "";
-footerAvatar.Parent = TabFooter;
-applyCorner(footerAvatar, 20);
-applyStroke(footerAvatar, "strokeSoft", 1, 0.6);
-
-local footerName = Instance.new("TextLabel");
-footerName.Name = "Name";
-footerName.BackgroundTransparency = 1;
-footerName.Position = UDim2.fromOffset(58, 8);
-footerName.Size = UDim2.new(1, -66, 0, 18);
-footerName.Font = Enum.Font.GothamBold;
-footerName.TextSize = 13;
-footerName.TextColor3 = theme.text;
-footerName.TextXAlignment = Enum.TextXAlignment.Left;
-footerName.TextTruncate = Enum.TextTruncate.AtEnd;
-footerName.Text = "divineaura";
-footerName.Parent = TabFooter;
-
-local footerGame = Instance.new("TextLabel");
-footerGame.Name = "GameName";
-footerGame.BackgroundTransparency = 1;
-footerGame.Position = UDim2.fromOffset(58, 27);
-footerGame.Size = UDim2.new(1, -66, 0, 24);
-footerGame.Font = Enum.Font.Gotham;
-footerGame.TextSize = 11;
-footerGame.TextColor3 = theme.textDim;
-footerGame.TextXAlignment = Enum.TextXAlignment.Left;
-footerGame.TextYAlignment = Enum.TextYAlignment.Top;
-footerGame.TextWrapped = true;
-footerGame.TextTruncate = Enum.TextTruncate.AtEnd;
-footerGame.Text = "...";
-footerGame.Parent = TabFooter;
-
--- Название игры - через MarketplaceService:GetProductInfo(game.PlaceId),
--- game.Name на клиенте часто пустой/неактуальный для публичных плейсов.
-pcall(function()
-	local MarketplaceService = game:GetService("MarketplaceService");
-	local ok, info = pcall(function()
-		return MarketplaceService:GetProductInfo(game.PlaceId);
-	end);
-	if ok and info and info.Name then
-		footerGame.Text = info.Name;
-	end
-end);
-
--- Скин игрока - официальный Roblox thumbnail endpoint через
--- Players:GetUserThumbnailAsync, без HttpService/сторонних запросов.
-pcall(function()
-	local ok, thumb, isReady = pcall(function()
-		return Players:GetUserThumbnailAsync(LocalPlayer.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100);
-	end);
-	if ok and thumb then
-		footerAvatar.Image = thumb;
-	end
-end);
-
--- Body начинается сразу за SidePanel (12 отступ + 220 ширина + 12 зазор) и
--- занимает ту же вертикаль (12..-12), что и сама SidePanel - визуально
--- левая карточка и правая область выровнены по высоте и явно разделены
--- зазором, а не просто разным фоном.
 local Body = Instance.new("Frame");
 Body.Name = "Body";
 Body.BackgroundTransparency = 1;
-Body.Position = UDim2.fromOffset(12 + SIDE_PANEL_WIDTH + 12, 12);
-Body.Size = UDim2.new(1, -(12 + SIDE_PANEL_WIDTH + 12 + 12), 1, -24);
+Body.Position = UDim2.fromOffset(84, 68);
+Body.Size = UDim2.new(1, -96, 1, -80);
 Body.Parent = Main;
 local Content = Instance.new("Frame");
 Content.Name = "Content";
@@ -3242,408 +2876,16 @@ Content.Size = UDim2.new(1, -24, 1, -10);
 Content.BorderSizePixel = 0;
 Content.Parent = Body;
 applyCorner(Content, 12);
-Content.ClipsDescendants = true;
-local contentStroke = applyStroke(Content, "glassStroke", 1, 0.88);
+applyStroke(Content, theme.glassStroke, 1, 0.88);
 local PagesRoot = Instance.new("Frame");
 PagesRoot.Name = "Pages";
 PagesRoot.BackgroundTransparency = 1;
 PagesRoot.Size = UDim2.new(1, 0, 1, 0);
 PagesRoot.Parent = Content;
 
--- Перекраска каркаса меню (Main/SidePanel/Content/TabFooter + шапка) одним
--- repaint'ом - остальные repaint'ы (по одному на фабрику) регистрируются
--- ниже, внутри createSection/createToggle/createSlider/... и createTabButton.
-registerThemeRepaint(function()
-	Main.BackgroundColor3 = theme.bg;
-	mainStroke.Color = theme.glassStroke;
-	mainGradient.Color = ColorSequence.new({
-		ColorSequenceKeypoint.new(0, theme.surface),
-		ColorSequenceKeypoint.new(1, theme.bg),
-	});
-	SidePanel.BackgroundColor3 = theme.surface;
-	sidePanelStroke.Color = theme.glassStroke;
-	headerBottomLine.BackgroundColor3 = theme.strokeSoft;
-	TitleLabel.TextColor3 = theme.text;
-	SubtitleLabel.TextColor3 = theme.textDim;
-	CloseBtn.BackgroundColor3 = theme.surfaceSoft;
-	CloseBtn.TextColor3 = theme.textDim;
-	TabFooter.BackgroundColor3 = theme.surfaceSoft;
-	tabFooterStroke.Color = theme.strokeSoft;
-	footerAvatar.BackgroundColor3 = theme.surface;
-	footerName.TextColor3 = theme.text;
-	footerGame.TextColor3 = theme.textDim;
-	Content.BackgroundColor3 = theme.surface;
-	contentStroke.Color = theme.glassStroke;
-end);
-
--- ===== Фон меню (картинка) + снег/дождь =====
--- Обёрнуто в IIFE (см. комментарий у "Pages" ниже про бюджет регистров) -
--- наружу (в Settings > Background) нужны только BACKGROUND_NAMES/WEATHER_NAMES
--- (списки для dropdown'ов), applyMenuBackground/spawnWeather (вызовы на
--- смену значения) и weatherIntensity (слайдер читает/пишет напрямую).
-local BACKGROUND_NAMES, applyMenuBackground, WEATHER_NAMES, weatherIntensity, spawnWeather;
-(function()
--- ImageLabel во весь Main, ZIndex ниже всех панелей (-1) - сидит ПОД
--- SidePanel/Body, которые полупрозрачны (~0.45), так что картинка просвечивает
--- сквозь них как задник, а Main.ClipsDescendants (выставлен выше) обрезает её
--- по скруглённым углам окна. Id проверены вручную: catalog decals, живой
--- рендер через thumbnails.roblox.com + визуальный скриншот перед выбором
--- (не доверяю названиям из сторонних списков - раньше так ловил чужую
--- картинку под правильным на вид именем).
-local MenuBackgroundImage = Instance.new("ImageLabel");
-MenuBackgroundImage.Name = "MenuBackground";
-MenuBackgroundImage.BackgroundTransparency = 1;
-MenuBackgroundImage.BorderSizePixel = 0;
-MenuBackgroundImage.Size = UDim2.new(1, 0, 1, 0);
-MenuBackgroundImage.ZIndex = -1;
-MenuBackgroundImage.ScaleType = Enum.ScaleType.Crop;
-MenuBackgroundImage.ImageTransparency = 0.1;
-MenuBackgroundImage.Image = "";
-MenuBackgroundImage.Visible = false;
-MenuBackgroundImage.Parent = Main;
-
-BACKGROUND_NAMES = { "None", "Night Sky", "Sunset Clouds", "Purple Sky", "Cyberpunk City" };
-local BACKGROUND_IMAGES = {
-	["Night Sky"] = "rbxassetid://1179217566",
-	["Sunset Clouds"] = "rbxassetid://7644352200",
-	["Purple Sky"] = "rbxassetid://1498564616",
-	["Cyberpunk City"] = "rbxassetid://107198336897952",
-};
-function applyMenuBackground(name)
-	local id = BACKGROUND_IMAGES[name];
-	if id then
-		MenuBackgroundImage.Image = id;
-		MenuBackgroundImage.Visible = true;
-	else
-		MenuBackgroundImage.Visible = false;
-		MenuBackgroundImage.Image = "";
-	end
-end
-
--- ===== Снег/дождь поверх меню =====
--- Слой с частицами внутри Main (между картинкой фона и панелями по ZIndex),
--- обрезается тем же Main.ClipsDescendants - без Drawing library, чистые
--- GuiObject'ы на RunService.Heartbeat, т.к. это должно быть видно и когда
--- Drawing-слой (ESP и т.п.) не трогается вообще.
-local WeatherLayer = Instance.new("Frame");
-WeatherLayer.Name = "WeatherLayer";
-WeatherLayer.BackgroundTransparency = 1;
-WeatherLayer.Size = UDim2.new(1, 0, 1, 0);
-WeatherLayer.ZIndex = 0;
-WeatherLayer.Parent = Main;
-
-WEATHER_NAMES = { "None", "Snow", "Rain" };
-local weatherParticles = {};
-local weatherConn = nil;
-weatherIntensity = 1;
-local function clearWeather()
-	if weatherConn then
-		weatherConn:Disconnect();
-		weatherConn = nil;
-	end
-	for _, data in ipairs(weatherParticles) do
-		pcall(function() data.inst:Destroy(); end);
-	end
-	weatherParticles = {};
-end
-function spawnWeather(mode)
-	clearWeather();
-	if (mode ~= "Snow") and (mode ~= "Rain") then
-		return;
-	end
-	local count = math.floor(((mode == "Snow") and 40 or 60) * weatherIntensity);
-	for _ = 1, count do
-		local p = Instance.new("Frame");
-		p.BorderSizePixel = 0;
-		p.BackgroundColor3 = Color3.new(1, 1, 1);
-		p.AnchorPoint = Vector2.new(0.5, 0.5);
-		p.ZIndex = 0;
-		p.Parent = WeatherLayer;
-		local data = {
-			inst = p,
-			x = math.random(),
-			y = math.random(),
-		};
-		if (mode == "Snow") then
-			local size = 2 + math.random() * 3;
-			p.Size = UDim2.fromOffset(size, size);
-			p.BackgroundTransparency = 0.2 + math.random() * 0.4;
-			applyCorner(p, math.ceil(size));
-			data.speed = 0.04 + math.random() * 0.07;
-			data.drift = (math.random() - 0.5) * 0.05;
-		else
-			p.Size = UDim2.fromOffset(1, 9 + math.random() * 7);
-			p.BackgroundTransparency = 0.45 + math.random() * 0.3;
-			p.Rotation = 12;
-			data.speed = 0.55 + math.random() * 0.35;
-			data.drift = 0.012;
-		end
-		p.Position = UDim2.fromScale(data.x, data.y);
-		table.insert(weatherParticles, data);
-	end
-	weatherConn = connectLive(RunService.Heartbeat, function(dt)
-		if not Main.Visible then
-			return;
-		end
-		for _, data in ipairs(weatherParticles) do
-			data.y = data.y + data.speed * dt;
-			data.x = data.x + data.drift * dt;
-			if (data.y > 1.05) then
-				data.y = -0.05;
-				data.x = math.random();
-			end
-			if (data.x > 1) then
-				data.x = 0;
-			elseif (data.x < 0) then
-				data.x = 1;
-			end
-			data.inst.Position = UDim2.fromScale(data.x, data.y);
-		end
-	end);
-end
-end)();
-
 local Pages = {};
 local Tabs = {};
 local tabEntries = {};
--- Векторные иконки (iconLine/iconRing/iconDot/drawIcon) подняты сюда, ВЫШЕ
--- createPage/createSection - изначально жили только у createTabButton,
--- ниже по файлу, а секциям (createSection) тоже нужен мелкий значок в
--- заголовке карточки. Lua не позволяет ссылаться на локальную функцию до
--- её объявления, поэтому единственный блок переехал целиком, а не
--- задублирован.
-local function iconLine(parent, x1, y1, x2, y2, thickness)
-	thickness = thickness or 2;
-	local dx, dy = x2 - x1, y2 - y1;
-	local len = math.sqrt(dx * dx + dy * dy);
-	if (len < 0.001) then
-		return nil;
-	end
-	local line = Instance.new("Frame");
-	line.BackgroundColor3 = Color3.new(1, 1, 1);
-	line.BorderSizePixel = 0;
-	line.AnchorPoint = Vector2.new(0.5, 0.5);
-	line.Position = UDim2.fromOffset((x1 + x2) / 2, (y1 + y2) / 2);
-	line.Size = UDim2.fromOffset(len, thickness);
-	line.Rotation = math.deg(math.atan2(dy, dx));
-	line.Parent = parent;
-	return line;
-end
-local function iconRing(parent, cx, cy, r, thickness)
-	thickness = thickness or 2;
-	local ring = Instance.new("Frame");
-	ring.BackgroundTransparency = 1;
-	ring.BorderSizePixel = 0;
-	ring.Position = UDim2.fromOffset(cx - r, cy - r);
-	ring.Size = UDim2.fromOffset(r * 2, r * 2);
-	ring.Parent = parent;
-	local corner = Instance.new("UICorner");
-	corner.CornerRadius = UDim.new(1, 0);
-	corner.Parent = ring;
-	local stroke = Instance.new("UIStroke");
-	stroke.Color = Color3.new(1, 1, 1);
-	stroke.Thickness = thickness;
-	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
-	stroke.Parent = ring;
-	return ring;
-end
-local function iconDot(parent, cx, cy, r)
-	local dot = Instance.new("Frame");
-	dot.BackgroundColor3 = Color3.new(1, 1, 1);
-	dot.BorderSizePixel = 0;
-	dot.Position = UDim2.fromOffset(cx - r, cy - r);
-	dot.Size = UDim2.fromOffset(r * 2, r * 2);
-	dot.Parent = parent;
-	local corner = Instance.new("UICorner");
-	corner.CornerRadius = UDim.new(1, 0);
-	corner.Parent = dot;
-	return dot;
-end
-local function iconRectOutline(parent, x1, y1, x2, y2, thickness)
-	iconLine(parent, x1, y1, x2, y1, thickness);
-	iconLine(parent, x2, y1, x2, y2, thickness);
-	iconLine(parent, x2, y2, x1, y2, thickness);
-	iconLine(parent, x1, y2, x1, y1, thickness);
-end
--- Реальные иконки Lucide (lucide.dev), зеркалированные в Roblox через
--- latte-soft/lucide-roblox: не одна картинка на иконку, а общие sprite-sheet
--- листы (256x256 на кадр) + ImageRectOffset/ImageRectSize вырезают нужный
--- кадр. Id и офсеты взяты из официального tarmac-manifest.toml репозитория
--- и проверены вручную - thumbnails.roblox.com отдаёт на них живой рендер
--- (не "PrivateImage"-заглушку, как было с хардкоженными weapon id), плюс
--- визуально сверен один лист (crosshair-кадр на позиции [514,257] -
--- реально кружок с прицелом, не мусор).
-local LUCIDE_ICONS = {
-	crosshair = { id = 16898668482, x = 514, y = 257 },
-	["rotate-ccw"] = { id = 16898733415, x = 257, y = 0 },
-	expand = { id = 16898669772, x = 514, y = 257 },
-	["sliders-horizontal"] = { id = 16898735040, x = 0, y = 257 },
-	flame = { id = 16898670919, x = 0, y = 257 },
-	["shield-check"] = { id = 16898734564, x = 0, y = 257 },
-	eye = { id = 16898669897, x = 0, y = 0 },
-	target = { id = 16898788248, x = 257, y = 0 },
-	swords = { id = 16898787671, x = 514, y = 514 },
-	globe = { id = 16898672599, x = 257, y = 257 },
-	keyboard = { id = 16898673794, x = 257, y = 0 },
-	menu = { id = 16898675673, x = 514, y = 257 },
-	palette = { id = 16898730641, x = 514, y = 514 },
-	folder = { id = 16898671684, x = 257, y = 0 },
-	shield = { id = 16898734664, x = 257, y = 0 },
-	power = { id = 16898732262, x = 514, y = 257 },
-	settings = { id = 16898734421, x = 514, y = 0 },
-	users = { id = 16898790259, x = 514, y = 0 },
-	search = { id = 16898734242, x = 257, y = 0 },
-	monitor = { id = 16898729141, x = 514, y = 257 },
-	scan = { id = 16898733817, x = 514, y = 0 },
-	["chevron-down"] = { id = 16898617411, x = 514, y = 257 },
-	copy = { id = 16898619423, x = 257, y = 514 },
-	wallpaper = { id = 16898790791, x = 0, y = 0 },
-};
-local function applyLucideIcon(imageLabel, name)
-	local def = LUCIDE_ICONS[name];
-	if not def then return false; end
-	imageLabel.Image = "rbxassetid://" .. def.id;
-	imageLabel.ImageRectOffset = Vector2.new(def.x, def.y);
-	imageLabel.ImageRectSize = Vector2.new(256, 256);
-	return true;
-end
--- Таббар использует те же lucide-имена напрямую вместо старых
--- одиночных-картинка-на-иконку id.
-local ICON_ASSETS = {
-	combat = "swords",
-	aim = "crosshair",
-	visuals = "eye",
-	autoshoot = "target",
-	misc = "sliders-horizontal",
-	players = "users",
-	settings = "settings",
-	search = "search",
-};
-local function drawIcon(parent, kind)
-	if (kind == "combat") then
-		iconLine(parent, 18, 4, 6, 18, 2);
-		iconLine(parent, 6, 14.3, 9.7, 17.5, 2);
-		iconLine(parent, 6, 4, 18, 18, 2);
-		iconLine(parent, 18.1, 14.3, 14.3, 17.5, 2);
-	elseif (kind == "trigger") then
-		iconLine(parent, 15, 2, 5, 13, 2);
-		iconLine(parent, 5, 13, 11, 12, 2);
-		iconLine(parent, 11, 12, 8, 21, 2);
-		iconLine(parent, 8, 21, 18, 10, 2);
-		iconLine(parent, 18, 10, 12, 10, 2);
-		iconLine(parent, 12, 10, 15, 2, 2);
-	elseif (kind == "aim") then
-		iconRing(parent, 11, 11, 5, 2);
-		iconLine(parent, 11, 2, 11, 4, 2);
-		iconLine(parent, 11, 18, 11, 20, 2);
-		iconLine(parent, 2, 11, 4, 11, 2);
-		iconLine(parent, 18, 11, 20, 11, 2);
-	elseif (kind == "visuals") then
-		iconRectOutline(parent, 3, 4, 19, 14, 2);
-		iconLine(parent, 11, 14, 11, 17, 2);
-		iconLine(parent, 8, 17, 14, 17, 2);
-	elseif (kind == "autoshoot") then
-		iconRing(parent, 11, 11, 6, 2);
-		iconRing(parent, 11, 11, 3, 2);
-		iconDot(parent, 11, 11, 1);
-	elseif (kind == "misc") then
-		iconLine(parent, 6, 4, 6, 18, 2);
-		iconLine(parent, 11, 4, 11, 18, 2);
-		iconLine(parent, 16, 4, 16, 18, 2);
-		iconLine(parent, 4, 10, 8, 10, 3);
-		iconLine(parent, 9, 7, 13, 7, 3);
-		iconLine(parent, 14, 13, 18, 13, 3);
-	elseif (kind == "players") then
-		iconRing(parent, 11, 7, 3.5, 2);
-		iconLine(parent, 7, 17, 7, 12, 2);
-		iconLine(parent, 7, 12, 15, 12, 2);
-		iconLine(parent, 15, 12, 15, 17, 2);
-	elseif (kind == "settings") then
-		iconRing(parent, 11, 11, 5.5, 2);
-		iconDot(parent, 11, 11, 1.6);
-		iconLine(parent, 11, 2, 11, 4, 2);
-	elseif (kind == "section") then
-		-- Générик-значок для заголовков секций (createSection) - три
-		-- горизонтальные "строки списка", нейтрально подходит любой карточке
-		-- независимо от её темы, без завязки на конкретный heading-текст.
-		iconLine(parent, 4, 6, 18, 6, 2);
-		iconLine(parent, 4, 11, 18, 11, 2);
-		iconLine(parent, 4, 16, 14, 16, 2);
-	elseif (kind == "chevron") then
-		iconLine(parent, 5, 8, 11, 14, 2);
-		iconLine(parent, 11, 14, 17, 8, 2);
-	elseif (kind == "rewind") then
-		-- Backtrack: две стрелки "назад во времени"
-		iconLine(parent, 11, 2, 4, 11, 2);
-		iconLine(parent, 4, 11, 11, 20, 2);
-		iconLine(parent, 18, 2, 11, 11, 2);
-		iconLine(parent, 11, 11, 18, 20, 2);
-	elseif (kind == "expand") then
-		-- Hitbox Expander: уголки, разъезжающиеся наружу
-		iconLine(parent, 3, 8, 3, 3, 2);
-		iconLine(parent, 3, 3, 8, 3, 2);
-		iconLine(parent, 19, 8, 19, 3, 2);
-		iconLine(parent, 19, 3, 14, 3, 2);
-		iconLine(parent, 3, 14, 3, 19, 2);
-		iconLine(parent, 3, 19, 8, 19, 2);
-		iconLine(parent, 19, 14, 19, 19, 2);
-		iconLine(parent, 19, 19, 14, 19, 2);
-	elseif (kind == "sliders") then
-		-- Common/настройки-регуляторы: 2 горизонтальные направляющие с ползунками
-		iconLine(parent, 3, 7, 19, 7, 2);
-		iconDot(parent, 13, 7, 2.5);
-		iconLine(parent, 3, 15, 19, 15, 2);
-		iconDot(parent, 8, 15, 2.5);
-	elseif (kind == "shield") then
-		-- Legit Settings: щит
-		iconLine(parent, 11, 2, 19, 5, 2);
-		iconLine(parent, 19, 5, 19, 11, 2);
-		iconLine(parent, 19, 11, 11, 20, 2);
-		iconLine(parent, 11, 20, 3, 11, 2);
-		iconLine(parent, 3, 11, 3, 5, 2);
-		iconLine(parent, 3, 5, 11, 2, 2);
-	elseif (kind == "gun") then
-		-- Weapons: силуэт пистолета
-		iconLine(parent, 3, 9, 15, 9, 2);
-		iconLine(parent, 15, 9, 15, 6, 2);
-		iconLine(parent, 15, 6, 19, 6, 2);
-		iconLine(parent, 19, 6, 19, 10, 2);
-		iconLine(parent, 19, 10, 9, 10, 2);
-		iconLine(parent, 9, 10, 9, 19, 2);
-		iconLine(parent, 9, 19, 6, 19, 2);
-		iconLine(parent, 6, 19, 6, 10, 2);
-	elseif (kind == "globe") then
-		-- World: глобус
-		iconRing(parent, 11, 11, 8, 2);
-		iconLine(parent, 3, 11, 19, 11, 1.5);
-		iconLine(parent, 11, 3, 11, 19, 1.5);
-	elseif (kind == "keyboard") then
-		-- Macro: клавиатура
-		iconRectOutline(parent, 2, 6, 20, 17, 2);
-		iconLine(parent, 5, 10, 5, 10, 2);
-		iconDot(parent, 6, 10, 1);
-		iconDot(parent, 10, 10, 1);
-		iconDot(parent, 14, 10, 1);
-		iconDot(parent, 18, 10, 1);
-		iconLine(parent, 6, 13.5, 16, 13.5, 1.6);
-	elseif (kind == "palette") then
-		-- Appearance/Themes: палитра
-		iconRing(parent, 11, 11, 8, 2);
-		iconDot(parent, 8, 8, 1.6);
-		iconDot(parent, 14, 8, 1.6);
-		iconDot(parent, 7, 13, 1.6);
-		iconDot(parent, 15, 13, 1.6);
-	elseif (kind == "folder") then
-		-- Configs: папка
-		iconLine(parent, 3, 7, 3, 18, 2);
-		iconLine(parent, 3, 18, 19, 18, 2);
-		iconLine(parent, 19, 18, 19, 8, 2);
-		iconLine(parent, 19, 8, 10, 8, 2);
-		iconLine(parent, 10, 8, 8, 5, 2);
-		iconLine(parent, 8, 5, 3, 5, 2);
-		iconLine(parent, 3, 5, 3, 7, 2);
-	end
-end
 local function createPage(name)
 	local page = Instance.new("ScrollingFrame");
 	page.Name = name .. "Page";
@@ -3654,14 +2896,6 @@ local function createPage(name)
 	page.Active = true;
 	page.Visible = false;
 	page.Parent = PagesRoot;
-	-- Отступ по краям страницы - без него карточки секций шли встык к
-	-- скруглённым краям Content, визуально "обрезаясь" об них.
-	local pagePad = Instance.new("UIPadding");
-	pagePad.PaddingLeft = UDim.new(0, 16);
-	pagePad.PaddingRight = UDim.new(0, 16);
-	pagePad.PaddingTop = UDim.new(0, 16);
-	pagePad.PaddingBottom = UDim.new(0, 16);
-	pagePad.Parent = page;
 	local leftCol = Instance.new("Frame");
 	leftCol.Name = "Left";
 	leftCol.BackgroundTransparency = 1;
@@ -3683,40 +2917,13 @@ local function createPage(name)
 	local function updateCanvas()
 		local leftH = leftLayout.AbsoluteContentSize.Y;
 		local rightH = rightLayout.AbsoluteContentSize.Y;
-		page.CanvasSize = UDim2.fromOffset(0, math.max(leftH, rightH) + 24 + 32);
+		page.CanvasSize = UDim2.fromOffset(0, math.max(leftH, rightH) + 24);
 	end
 	leftLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateCanvas);
 	rightLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateCanvas);
 	updateCanvas();
 	return { root = page, left = leftCol, right = rightCol, nextColumn = 1 };
 end
--- Иконка в заголовке секции подбирается по тексту heading - раньше везде
--- стоял один и тот же "section" (3 полоски), теперь у каждой карточки своя,
--- по смыслу. Ключи - ровно те heading-строки, что идут в createSection(...)
--- по всему файлу; то, чего нет в таблице, получает нейтральный fallback.
--- Имена - ключи LUCIDE_ICONS (реальные иконки, не нарисованные примитивами).
-local SECTION_ICONS = {
-	["Triggerbot"] = "flame",
-	["Backtrack"] = "rotate-ccw",
-	["Hitbox Expander"] = "expand",
-	["Silent Aim"] = "scan",
-	["Common"] = "settings",
-	["Rage Settings"] = "crosshair",
-	["Legit Settings"] = "shield-check",
-	["ESP"] = "eye",
-	["Autoshoot"] = "target",
-	["Weapons"] = "swords",
-	["World"] = "globe",
-	["Macro"] = "keyboard",
-	["Menu"] = "monitor",
-	["Appearance"] = "sliders-horizontal",
-	["Themes"] = "palette",
-	["Advanced Colors"] = "settings",
-	["Background"] = "wallpaper",
-	["Config"] = "folder",
-	["Safety"] = "shield",
-	["Script"] = "power",
-};
 local function createSection(page, heading, column)
 	local targetColumn = page.left;
 	if (column == "right") then
@@ -3732,195 +2939,53 @@ local function createSection(page, heading, column)
 	local section = Instance.new("Frame");
 	section.BackgroundColor3 = theme.surfaceSoft;
 	section.BackgroundTransparency = 0.5;
-	-- НЕ AutomaticSize: в этом executor'е AutomaticSize родителя эмпирически
-	-- НЕ пересчитывается при изменении Size дочернего Frame постфактум (только
-	-- на первом рендере) - проверено вживую (eval): прямое присвоение
-	-- ContentClip.Size 154->0->154 без твина НИКАК не меняло section.AbsoluteSize.
-	-- Поэтому высота секции считается явно и твинится вручную в applyCollapsed.
 	section.Size = UDim2.new(1, 0, 0, 0);
+	section.AutomaticSize = Enum.AutomaticSize.Y;
 	section.BorderSizePixel = 0;
 	section.Parent = targetColumn;
 	applyCorner(section, 8);
 	-- Толщина 1 + прозрачность 0.88 раньше давали почти невидимую линию,
 	-- которая на размытом фоне (Menu Blur) рендерилась неровно/ступеньками -
 	-- общая функция для ВСЕХ секций меню, фикс тут чинит границы везде разом.
-	local sectionStroke = applyStroke(section, "glassStroke", 1.25, 0.7);
+	applyStroke(section, theme.glassStroke, 1.25, 0.7);
 	local pad = Instance.new("UIPadding");
 	pad.PaddingTop = UDim.new(0, 10);
 	pad.PaddingLeft = UDim.new(0, 12);
 	pad.PaddingRight = UDim.new(0, 12);
-	pad.PaddingBottom = UDim.new(0, 10);
+	pad.PaddingBottom = UDim.new(0, 12);
 	pad.Parent = section;
-
-	-- Заголовок секции: иконка + название (сначала он, функции - под ним),
-	-- вся строка кликабельна и сворачивает/разворачивает content стрелкой
-	-- справа - как в референсе ("Menu"/"Configs"/"Themes" карточки).
-	local headerBtn = Instance.new("TextButton");
-	headerBtn.Name = "SectionHeader";
-	headerBtn.AutoButtonColor = false;
-	headerBtn.BackgroundTransparency = 1;
-	headerBtn.Size = UDim2.new(1, 0, 0, 22);
-	headerBtn.Text = "";
-	headerBtn.Parent = section;
-
-	-- Реальная Lucide-иконка (не нарисованная примитивами) - подобрана по
-	-- смыслу heading'а через SECTION_ICONS. "crosshair" по умолчанию, если
-	-- для какого-то заголовка забыли завести маппинг.
-	local headerIcon = Instance.new("ImageLabel");
-	headerIcon.Name = "Icon";
-	headerIcon.BackgroundTransparency = 1;
-	headerIcon.BorderSizePixel = 0;
-	headerIcon.Size = UDim2.fromOffset(18, 18);
-	headerIcon.AnchorPoint = Vector2.new(0, 0.5);
-	-- -2px по Y: геометрический центр картинки и оптический центр текста с
-	-- TextYAlignment=Center не совпадают (у шрифта в высоту строки заложен
-	-- запас под нижние выносные элементы g/y/p, поэтому текст визуально
-	-- сидит чуть выше геометрической середины) - без поправки иконка на вид
-	-- ниже заголовка.
-	headerIcon.Position = UDim2.new(0, 0, 0.5, -2);
-	headerIcon.ScaleType = Enum.ScaleType.Fit;
-	headerIcon.ImageColor3 = theme.accentWarm;
-	headerIcon.Parent = headerBtn;
-	applyLucideIcon(headerIcon, SECTION_ICONS[heading] or "crosshair");
-
 	local titleLabel = Instance.new("TextLabel");
 	titleLabel.BackgroundTransparency = 1;
-	titleLabel.Position = UDim2.fromOffset(26, -2);
-	titleLabel.Size = UDim2.new(1, -46, 1, 0);
+	titleLabel.Size = UDim2.new(1, 0, 0, 20);
 	titleLabel.Font = Enum.Font.GothamMedium;
 	titleLabel.TextColor3 = theme.text;
-	titleLabel.TextSize = 14;
+	titleLabel.TextSize = 12;
 	titleLabel.TextXAlignment = Enum.TextXAlignment.Left;
-	titleLabel.TextYAlignment = Enum.TextYAlignment.Center;
-	titleLabel.Text = heading;
-	titleLabel.Parent = headerBtn;
-
-	local chevron = Instance.new("ImageLabel");
-	chevron.Name = "Chevron";
-	chevron.BackgroundTransparency = 1;
-	chevron.BorderSizePixel = 0;
-	chevron.Size = UDim2.fromOffset(16, 16);
-	chevron.AnchorPoint = Vector2.new(1, 0.5);
-	chevron.Position = UDim2.new(1, 0, 0.5, 0);
-	chevron.ScaleType = Enum.ScaleType.Fit;
-	chevron.ImageColor3 = theme.textDim;
-	chevron.Parent = headerBtn;
-	applyLucideIcon(chevron, "chevron-down");
-
-	-- Тонкая линия-разделитель под заголовком, перед контентом - как в
-	-- референсе (там шапка карточки явно отбита от тела снизу).
-	local headerDivider = Instance.new("Frame");
-	headerDivider.Name = "HeaderDivider";
-	headerDivider.BackgroundColor3 = theme.strokeSoft;
-	headerDivider.BackgroundTransparency = 0.5;
-	headerDivider.BorderSizePixel = 0;
-	headerDivider.Position = UDim2.fromOffset(0, 28);
-	headerDivider.Size = UDim2.new(1, 0, 0, 1);
-	headerDivider.Parent = section;
-
-	-- contentClip - отдельный Frame с ClipsDescendants, у НЕГО твинится Size.Y
-	-- (0 <-> естественная высота content). content внутри остаётся
-	-- AutomaticSize=Y как раньше - только он знает свою настоящую высоту
-	-- (content.AbsoluteSize.Y), clip просто обрезает/открывает окно на неё.
-	-- section.Size твинится ЯВНО, синхронно с contentClip (см. комментарий у
-	-- объявления section - AutomaticSize тут не работает постфактум).
-	local CONTENT_Y = 36;
-	local HEADER_H = 22;
-	local contentClip = Instance.new("Frame");
-	contentClip.Name = "ContentClip";
-	contentClip.BackgroundTransparency = 1;
-	contentClip.Position = UDim2.fromOffset(0, CONTENT_Y);
-	contentClip.Size = UDim2.new(1, 0, 0, 0);
-	contentClip.ClipsDescendants = true;
-	contentClip.Parent = section;
-
+	titleLabel.Text = string.upper(heading);
+	titleLabel.Parent = section;
+	local underline = Instance.new("Frame");
+	underline.BackgroundColor3 = Color3.new(1, 1, 1);
+	underline.BackgroundTransparency = 0.55;
+	underline.BorderSizePixel = 0;
+	underline.Position = UDim2.fromOffset(0, 22);
+	underline.Size = UDim2.new(0, 36, 0, 1);
+	underline.Parent = section;
+	makeGradient(theme.accentSoft, theme.accentWarm, 90).Parent = underline;
 	local content = Instance.new("Frame");
 	content.BackgroundTransparency = 1;
+	content.Position = UDim2.fromOffset(0, 30);
 	content.Size = UDim2.new(1, 0, 0, 0);
 	content.AutomaticSize = Enum.AutomaticSize.Y;
-	content.Parent = contentClip;
+	content.Parent = section;
 	local layout = Instance.new("UIListLayout");
 	layout.Padding = UDim.new(0, 8);
 	layout.SortOrder = Enum.SortOrder.LayoutOrder;
 	layout.Parent = content;
-
-	local function sectionHeightFor(isCollapsed, contentH)
-		if isCollapsed then
-			return pad.PaddingTop.Offset + HEADER_H + 2;
-		end
-		return pad.PaddingTop.Offset + CONTENT_Y + contentH + 10;
-	end
-
-	local collapsed = false;
-	local clipTween, sectionTween = nil, nil;
-	local function applyCollapsed(animate)
-		headerDivider.Visible = not collapsed;
-		pad.PaddingBottom = UDim.new(0, collapsed and 2 or 10);
-		tween(chevron, 0.2, { Rotation = collapsed and -90 or 0 }, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
-		local contentH = collapsed and 0 or content.AbsoluteSize.Y;
-		local targetClipH = contentH;
-		local targetSectionH = sectionHeightFor(collapsed, contentH);
-		if clipTween then clipTween:Cancel(); end
-		if sectionTween then sectionTween:Cancel(); end
-		if animate == false then
-			contentClip.Size = UDim2.new(1, 0, 0, targetClipH);
-			section.Size = UDim2.new(1, 0, 0, targetSectionH);
-			clipTween, sectionTween = nil, nil;
-		else
-			local tw1 = tween(contentClip, 0.24, { Size = UDim2.new(1, 0, 0, targetClipH) }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out);
-			local tw2 = tween(section, 0.24, { Size = UDim2.new(1, 0, 0, targetSectionH) }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out);
-			clipTween, sectionTween = tw1, tw2;
-			if tw1 then
-				tw1.Completed:Connect(function()
-					if clipTween == tw1 then clipTween = nil; end
-				end);
-			end
-			if tw2 then
-				tw2.Completed:Connect(function()
-					if sectionTween == tw2 then sectionTween = nil; end
-				end);
-			end
-		end
-	end
-	headerBtn.MouseButton1Click:Connect(function()
-		collapsed = not collapsed;
-		applyCollapsed(true);
-	end);
-	-- Высота content на первом кадре ещё не посчитана AutomaticSize движком -
-	-- откладываем начальную (без анимации) раскладку на конец кадра.
-	task.defer(function()
-		if not collapsed then
-			local contentH = content.AbsoluteSize.Y;
-			contentClip.Size = UDim2.new(1, 0, 0, contentH);
-			section.Size = UDim2.new(1, 0, 0, sectionHeightFor(false, contentH));
-		end
-	end);
-	-- Пока секция открыта, содержимое может менять высоту само (добавили
-	-- ряд, развернули вложенный dropdown) - без этого clip/секция оставались
-	-- бы заморожены на высоте первого открытия и обрезали новые элементы.
-	content:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-		if (not collapsed) and (not clipTween) and (not sectionTween) then
-			local contentH = content.AbsoluteSize.Y;
-			contentClip.Size = UDim2.new(1, 0, 0, contentH);
-			section.Size = UDim2.new(1, 0, 0, sectionHeightFor(false, contentH));
-		end
-	end);
-
-	registerThemeRepaint(function()
-		section.BackgroundColor3 = theme.surfaceSoft;
-		sectionStroke.Color = theme.glassStroke;
-		headerIcon.ImageColor3 = theme.accentWarm;
-		titleLabel.TextColor3 = theme.text;
-		chevron.ImageColor3 = theme.textDim;
-		headerDivider.BackgroundColor3 = theme.strokeSoft;
-	end);
-
 	return content;
 end
 -- ===== Config system (ported from source menu: JSON file, Save/Load) =====
 local HttpService = game:GetService("HttpService");
-local cfgFolder = "emoline_configs";
-local cfgFilePath = cfgFolder .. "/config.json";
+local cfgFilePath = "emoline_configs/config.json";
 local cfgControls = {};
 local cfgSavePending = false;
 local cfgLoading = false;
@@ -3990,7 +3055,8 @@ local function cfgRegister(key, getValue, setValue)
 	end
 end
 
-local function cfgBuildData()
+local function cfgSaveConfig()
+	if not cfgSupported then return false; end
 	local data = {};
 	for _, key in ipairs(cfgOrder) do
 		local c = cfgControls[key];
@@ -4008,22 +3074,11 @@ local function cfgBuildData()
 		end
 		task.wait(0.001);
 	end
-	return data;
-end
-
--- path по умолчанию - автосейв-слот (cfgFilePath), им же пользуется
--- cfgScheduleSave на каждое изменение контрола. Именованные конфиги
--- (Settings > Config) идут через cfgSaveConfigAs/cfgLoadConfigAs ниже,
--- с тем же форматом файла - просто другой путь.
-local function cfgSaveConfig(path)
-	if not cfgSupported then return false; end
-	path = path or cfgFilePath;
-	local data = cfgBuildData();
 	return pcall(function()
-		if not isfolder(cfgFolder) then
-			makefolder(cfgFolder);
+		if not isfolder("emoline_configs") then
+			makefolder("emoline_configs");
 		end
-		writefile(path, HttpService:JSONEncode(data));
+		writefile(cfgFilePath, HttpService:JSONEncode(data));
 	end);
 end
 
@@ -4036,7 +3091,14 @@ local function cfgScheduleSave()
 	end);
 end
 
-local function cfgApplyDecoded(decoded)
+local function cfgLoadConfig()
+	if not cfgSupported then return false; end
+	local content;
+	local okRead = pcall(function() content = readfile(cfgFilePath); end);
+	if (not okRead) or (type(content) ~= "string") or (#content == 0) then return false; end
+	local decoded;
+	local okDecode = pcall(function() decoded = HttpService:JSONDecode(content); end);
+	if (not okDecode) or (type(decoded) ~= "table") then return false; end
 	cfgLoading = true;
 	local function applyEntry(key, ent)
 		local c = cfgControls[key];
@@ -4054,71 +3116,7 @@ local function cfgApplyDecoded(decoded)
 		end
 	end
 	cfgLoading = false;
-end
-
-local function cfgLoadConfig(path)
-	if not cfgSupported then return false; end
-	path = path or cfgFilePath;
-	local content;
-	local okRead = pcall(function() content = readfile(path); end);
-	if (not okRead) or (type(content) ~= "string") or (#content == 0) then return false; end
-	local decoded;
-	local okDecode = pcall(function() decoded = HttpService:JSONDecode(content); end);
-	if (not okDecode) or (type(decoded) ~= "table") then return false; end
-	cfgApplyDecoded(decoded);
 	return true;
-end
-
--- ===== Именованные конфиги (Settings > Config: сохранить/загрузить/удалить
--- ВЫБРАННЫЙ по имени, не один фиксированный файл) =====
-local function cfgSanitizeName(name)
-	name = tostring(name or ""):gsub("[/\\:%*%?\"<>|]", ""):gsub("^%s+", ""):gsub("%s+$", "");
-	if (name == "") or (name == "config") then
-		return nil;
-	end
-	return name;
-end
-local function cfgPathForName(name)
-	return cfgFolder .. "/" .. name .. ".json";
-end
-local function cfgListConfigNames()
-	local names = {};
-	if (not cfgSupported) or (type(listfiles) ~= "function") then
-		return names;
-	end
-	if not isfolder(cfgFolder) then
-		return names;
-	end
-	local ok, files = pcall(listfiles, cfgFolder);
-	if (not ok) or (type(files) ~= "table") then
-		return names;
-	end
-	for _, full in ipairs(files) do
-		local fname = tostring(full):match("[^/\\]+%.json$");
-		if fname then
-			local base = fname:sub(1, #fname - 5);
-			if (base ~= "config") then
-				table.insert(names, base);
-			end
-		end
-	end
-	table.sort(names, function(a, b) return a:lower() < b:lower(); end);
-	return names;
-end
-local function cfgSaveConfigAs(name)
-	name = cfgSanitizeName(name);
-	if not name then return false; end
-	return cfgSaveConfig(cfgPathForName(name));
-end
-local function cfgLoadConfigAs(name)
-	name = cfgSanitizeName(name);
-	if not name then return false; end
-	return cfgLoadConfig(cfgPathForName(name));
-end
-local function cfgDeleteConfigAs(name)
-	name = cfgSanitizeName(name);
-	if (not name) or (type(delfile) ~= "function") then return false; end
-	return pcall(delfile, cfgPathForName(name));
 end
 
 local function createToggle(parent, caption, defaultValue, onChange, cfgKey)
@@ -4134,7 +3132,7 @@ local function createToggle(parent, caption, defaultValue, onChange, cfgKey)
 	row.BorderSizePixel = 0;
 	row.Parent = parent;
 	applyCorner(row, 10);
-	addHover(row, "surfaceElevated", "surfaceSoft");
+	addHover(row, theme.surfaceElevated, theme.surfaceSoft);
 	local label = Instance.new("TextLabel");
 	label.BackgroundTransparency = 1;
 	label.Position = UDim2.fromOffset(14, 10);
@@ -4157,7 +3155,7 @@ local function createToggle(parent, caption, defaultValue, onChange, cfgKey)
 	switch.BorderSizePixel = 0;
 	switch.Parent = row;
 	applyCorner(switch, 6);
-	local switchStroke = applyStroke(switch, "strokeSoft", 1.5, 0.4);
+	applyStroke(switch, theme.strokeSoft, 1.5, 0.4);
 	local switchGradient = makeGradient(theme.accentSoft, theme.accentWarm, 90);
 	switchGradient.Enabled = false;
 	switchGradient.Parent = switch;
@@ -4238,20 +3236,6 @@ local function createToggle(parent, caption, defaultValue, onChange, cfgKey)
 	cfgRegister(cfgKey, function() return state; end, function(v)
 		setter(v);
 	end);
-	registerThemeRepaint(function()
-		row.BackgroundColor3 = theme.surfaceElevated;
-		label.TextColor3 = theme.text;
-		switch.BackgroundColor3 = (state and theme.accent) or theme.surfaceElevated;
-		switchStroke.Color = theme.strokeSoft;
-		switchGradient.Color = ColorSequence.new({
-			ColorSequenceKeypoint.new(0, theme.accentSoft),
-			ColorSequenceKeypoint.new(1, theme.accentWarm),
-		});
-		if state then
-			checkStem.BackgroundColor3 = theme.text;
-			checkArm.BackgroundColor3 = theme.text;
-		end
-	end);
 	return api, row;
 end
 local function createSlider(parent, caption, minValue, maxValue, value, onChange, decimals, cfgKey)
@@ -4268,7 +3252,7 @@ local function createSlider(parent, caption, minValue, maxValue, value, onChange
 	row.BorderSizePixel = 0;
 	row.Parent = parent;
 	applyCorner(row, 10);
-	addHover(row, "surfaceElevated", "surfaceSoft");
+	addHover(row, theme.surfaceElevated, theme.surfaceSoft);
 	local label = Instance.new("TextLabel");
 	label.BackgroundTransparency = 1;
 	label.Position = UDim2.fromOffset(14, 6);
@@ -4327,8 +3311,7 @@ local function createSlider(parent, caption, minValue, maxValue, value, onChange
 	fill.BorderSizePixel = 0;
 	fill.Parent = track;
 	applyCorner(fill, 4);
-	local fillGradient = makeGradient(theme.accentSoft, theme.accentWarm, 90);
-	fillGradient.Parent = fill;
+	makeGradient(theme.accentSoft, theme.accentWarm, 90).Parent = fill;
 	local thumb = Instance.new("Frame");
 	thumb.AnchorPoint = Vector2.new(0.5, 0.5);
 	thumb.Size = UDim2.fromOffset(12, 12);
@@ -4338,7 +3321,7 @@ local function createSlider(parent, caption, minValue, maxValue, value, onChange
 	thumb.ZIndex = 2;
 	thumb.Parent = track;
 	applyCorner(thumb, 6);
-	local thumbStroke = applyStroke(thumb, "strokeSoft", 1, 0.4);
+	applyStroke(thumb, theme.strokeSoft, 1, 0.4);
 	local dragging = false;
 	local function roundStep(v)
 		local step = 10 ^ (-decimals);
@@ -4439,21 +3422,6 @@ local function createSlider(parent, caption, minValue, maxValue, value, onChange
 		render(true);
 		onChange(nv);
 	end);
-	registerThemeRepaint(function()
-		row.BackgroundColor3 = theme.surfaceElevated;
-		label.TextColor3 = theme.text;
-		if not valueLabel:IsFocused() then
-			valueLabel.TextColor3 = theme.textDim;
-		end
-		track.BackgroundColor3 = theme.surface;
-		fill.BackgroundColor3 = theme.accent;
-		fillGradient.Color = ColorSequence.new({
-			ColorSequenceKeypoint.new(0, theme.accentSoft),
-			ColorSequenceKeypoint.new(1, theme.accentWarm),
-		});
-		thumb.BackgroundColor3 = theme.text;
-		thumbStroke.Color = theme.strokeSoft;
-	end);
 	return row;
 end
 local activeColorPanel = nil;
@@ -4498,7 +3466,7 @@ local function createColorRow(parent, caption, getColor, setColor, cfgKey, reset
 	wrap.BorderSizePixel = 0;
 	wrap.Parent = parent;
 	applyCorner(wrap, 10);
-	addHover(wrap, "surfaceElevated", "surfaceSoft");
+	addHover(wrap, theme.surfaceElevated, theme.surfaceSoft);
 	local pad = Instance.new("UIPadding");
 	pad.PaddingTop = UDim.new(0, 6);
 	pad.PaddingBottom = UDim.new(0, 6);
@@ -4532,7 +3500,7 @@ local function createColorRow(parent, caption, getColor, setColor, cfgKey, reset
 	colorButton.BorderSizePixel = 0;
 	colorButton.Parent = headerRow;
 	applyCorner(colorButton, 6);
-	local colorButtonStroke = applyStroke(colorButton, "strokeSoft", 1.5, 0.4);
+	applyStroke(colorButton, theme.strokeSoft, 1.5, 0.4);
 
 	local panel = Instance.new("Frame");
 	panel.BackgroundColor3 = theme.surface;
@@ -4542,7 +3510,7 @@ local function createColorRow(parent, caption, getColor, setColor, cfgKey, reset
 	panel.Visible = false;
 	panel.Parent = wrap;
 	applyCorner(panel, 6);
-	applyStroke(panel, "strokeSoft", 1, 0.5);
+	applyStroke(panel, theme.strokeSoft, 1, 0.5);
 	local panelBaseTransparency = panel.BackgroundTransparency;
 	local function showPanel()
 		panel.Visible = true;
@@ -4577,7 +3545,7 @@ local function createColorRow(parent, caption, getColor, setColor, cfgKey, reset
 	pickerRow.Size = UDim2.new(1, 0, 0, 168);
 	pickerRow.Parent = panel;
 	local wheelWrap = Instance.new("Frame");
-	bindThemeColor(wheelWrap, "BackgroundColor3", "surfaceSoft");
+	wheelWrap.BackgroundColor3 = theme.surfaceSoft;
 	wheelWrap.Position = UDim2.fromOffset(0, 0);
 	wheelWrap.Size = UDim2.fromOffset(168, 168);
 	wheelWrap.Parent = pickerRow;
@@ -4599,7 +3567,7 @@ local function createColorRow(parent, caption, getColor, setColor, cfgKey, reset
 	applyStroke(wheelCursor, Color3.fromRGB(235, 240, 250), 2, 0);
 
 	local valueWrap = Instance.new("Frame");
-	bindThemeColor(valueWrap, "BackgroundColor3", "surfaceSoft");
+	valueWrap.BackgroundColor3 = theme.surfaceSoft;
 	valueWrap.AnchorPoint = Vector2.new(1, 0);
 	valueWrap.Position = UDim2.new(1, 0, 0, 0);
 	valueWrap.Size = UDim2.fromOffset(26, 168);
@@ -4828,19 +3796,8 @@ local function createColorRow(parent, caption, getColor, setColor, cfgKey, reset
 			end);
 		end
 	end);
-	registerThemeRepaint(function()
-		wrap.BackgroundColor3 = theme.surfaceElevated;
-		label.TextColor3 = theme.text;
-		colorButtonStroke.Color = theme.strokeSoft;
-		panel.BackgroundColor3 = theme.surface;
-	end);
 	return wrap;
 end
--- Раскрывающийся список: клик по строке раскрывает её ЖЕ контент вниз -
--- ТОЧНО тот же механизм, что и у карточек секций (createSection): соседний
--- Frame с AutomaticSize.Y, вставленный следом в тот же parent, просто
--- раздвигает остальные ряды через их общий UIListLayout. Никакого отдельного
--- всплывающего окна - список живёт в том же месте меню, что и сама вкладка.
 local function createDropdown(parent, caption, options, default, onChange, cfgKey)
 	local rawOnChange = onChange;
 	onChange = function(v)
@@ -4856,13 +3813,13 @@ local function createDropdown(parent, caption, options, default, onChange, cfgKe
 	row.Text = "";
 	row.Parent = parent;
 	applyCorner(row, 8);
-	local rowStroke = applyStroke(row, "strokeSoft", 1, 0.5);
-	addHover(row, "surfaceElevated", "surfaceSoft");
+	applyStroke(row, theme.strokeSoft, 1, 0.5);
+	addHover(row, theme.surfaceElevated, theme.surfaceSoft);
 	addPressAnimation(row);
 	local label = Instance.new("TextLabel");
 	label.BackgroundTransparency = 1;
 	label.Position = UDim2.fromOffset(12, 0);
-	label.Size = UDim2.new(1, -150, 1, 0);
+	label.Size = UDim2.new(1, -130, 1, 0);
 	label.Font = Enum.Font.Gotham;
 	label.TextColor3 = theme.text;
 	label.TextSize = 12;
@@ -4872,313 +3829,45 @@ local function createDropdown(parent, caption, options, default, onChange, cfgKe
 	local valueLabel = Instance.new("TextLabel");
 	valueLabel.BackgroundTransparency = 1;
 	valueLabel.AnchorPoint = Vector2.new(1, 0);
-	valueLabel.Position = UDim2.new(1, -30, 0, 0);
-	valueLabel.Size = UDim2.fromOffset(100, 34);
+	valueLabel.Position = UDim2.new(1, -12, 0, 0);
+	valueLabel.Size = UDim2.fromOffset(118, 34);
 	valueLabel.Font = Enum.Font.GothamMedium;
 	valueLabel.TextColor3 = theme.accentWarm;
 	valueLabel.TextSize = 11;
 	valueLabel.TextXAlignment = Enum.TextXAlignment.Right;
-	valueLabel.TextTruncate = Enum.TextTruncate.AtEnd;
 	valueLabel.Parent = row;
-	local chevron = Instance.new("ImageLabel");
-	chevron.Name = "Chevron";
-	chevron.BackgroundTransparency = 1;
-	chevron.BorderSizePixel = 0;
-	chevron.Size = UDim2.fromOffset(14, 14);
-	chevron.AnchorPoint = Vector2.new(1, 0.5);
-	chevron.Position = UDim2.new(1, -10, 0.5, 0);
-	chevron.ScaleType = Enum.ScaleType.Fit;
-	chevron.ImageColor3 = theme.textDim;
-	chevron.Parent = row;
-	applyLucideIcon(chevron, "chevron-down");
-
-	-- Список вариантов - отдельный Frame СРАЗУ ПОСЛЕ row в том же parent
-	-- (вставлен следующим - значит в UIListLayout родителя встанет прямо под
-	-- строкой), раскрывается через AutomaticSize.Y + Visible, в точности как
-	-- content у createSection.
-	local list = Instance.new("Frame");
-	list.Name = "DropdownList";
-	list.BackgroundTransparency = 1;
-	list.Size = UDim2.new(1, 0, 0, 0);
-	list.ClipsDescendants = true;
-	list.Visible = false;
-	list.Parent = parent;
-	local listPad = Instance.new("UIPadding");
-	listPad.PaddingTop = UDim.new(0, 6);
-	listPad.Parent = list;
-	local listInner = Instance.new("Frame");
-	listInner.BackgroundColor3 = theme.surface;
-	listInner.BackgroundTransparency = 0.1;
-	listInner.Size = UDim2.new(1, 0, 0, 0);
-	listInner.AutomaticSize = Enum.AutomaticSize.Y;
-	listInner.ClipsDescendants = true;
-	listInner.BorderSizePixel = 0;
-	listInner.Parent = list;
-	applyCorner(listInner, 10);
-	local listInnerStroke = applyStroke(listInner, "glassStroke", 1.25, 0.82);
-	local listInnerPad = Instance.new("UIPadding");
-	listInnerPad.PaddingTop = UDim.new(0, 5);
-	listInnerPad.PaddingBottom = UDim.new(0, 5);
-	listInnerPad.PaddingLeft = UDim.new(0, 5);
-	listInnerPad.PaddingRight = UDim.new(0, 5);
-	listInnerPad.Parent = listInner;
-	local listLayout = Instance.new("UIListLayout");
-	listLayout.Padding = UDim.new(0, 4);
-	listLayout.SortOrder = Enum.SortOrder.LayoutOrder;
-	listLayout.Parent = listInner;
-
 	local index = 1;
-	local optionRows = {};
-	local expanded = false;
-
-	-- Как у createSection - раскрытие не мгновенный Visible-флип, а твин
-	-- Size.Y самого list (0 <-> естественная высота listInner), list режет
-	-- содержимое (ClipsDescendants), listInner внутри остаётся
-	-- AutomaticSize=Y - только по нему и меряем целевую высоту.
-	local listTween = nil;
-	local function setExpanded(v)
-		expanded = v;
-		tween(chevron, 0.2, { Rotation = v and 180 or 0 }, Enum.EasingStyle.Quad, Enum.EasingDirection.Out);
-		if listTween then listTween:Cancel(); end
-		if v then
-			list.Visible = true;
-			local targetH = listInner.AbsoluteSize.Y + listPad.PaddingTop.Offset;
-			local tw = tween(list, 0.2, { Size = UDim2.new(1, 0, 0, targetH) }, Enum.EasingStyle.Quint, Enum.EasingDirection.Out);
-			listTween = tw;
-			if tw then
-				tw.Completed:Connect(function()
-					if listTween == tw then listTween = nil; end
-				end);
-			end
-		else
-			local tw = tween(list, 0.16, { Size = UDim2.new(1, 0, 0, 0) }, Enum.EasingStyle.Quad, Enum.EasingDirection.In);
-			listTween = tw;
-			if tw then
-				tw.Completed:Connect(function()
-					if listTween == tw then
-						listTween = nil;
-						list.Visible = false;
-					end
-				end);
-			end
-		end
-	end
-	-- Карточка опции - тот же язык, что у свитчей createToggle: акцентный
-	-- градиент (accentSoft->accentWarm) на выбранной, radio-индикатор справа
-	-- с тем же Back-easing "поп"-анимацией, что и чекмарк тоггла, левая
-	-- акцент-полоска для фокуса с первого взгляда, press-анимация на клике.
-	local function paintOptionRow(entry, i, animate)
-		local active = (i == index);
-		entry.radioRingStroke.Color = theme.strokeSoft;
-		entry.radioFill.BackgroundColor3 = theme.accentWarm;
-		entry.bar.BackgroundColor3 = theme.accentWarm;
-		entry.gradient.Color = ColorSequence.new({
-			ColorSequenceKeypoint.new(0, theme.accentSoft),
-			ColorSequenceKeypoint.new(1, theme.accentWarm),
-		});
-		entry.gradient.Enabled = active;
-		tween(entry.btn, 0.16, {
-			BackgroundColor3 = active and theme.accent or theme.surfaceElevated,
-			BackgroundTransparency = active and 0.18 or 0.5,
-		});
-		tween(entry.stroke, 0.16, {
-			Color = active and theme.accentWarm or theme.strokeSoft,
-			Transparency = active and 0.35 or 0.65,
-		});
-		tween(entry.bar, 0.16, { BackgroundTransparency = active and 0 or 1 });
-		entry.lbl.Font = active and Enum.Font.GothamMedium or Enum.Font.Gotham;
-		tween(entry.lbl, 0.16, { TextColor3 = active and theme.text or theme.textDim });
-		if active then
-			entry.radioFill.Visible = true;
-			if animate ~= false then
-				tween(entry.radioFill, 0.22, { Size = UDim2.fromOffset(8, 8) }, Enum.EasingStyle.Back, Enum.EasingDirection.Out);
-			else
-				entry.radioFill.Size = UDim2.fromOffset(8, 8);
-			end
-		else
-			local tw = tween(entry.radioFill, 0.12, { Size = UDim2.fromOffset(2, 2) });
-			if tw then
-				tw.Completed:Connect(function()
-					entry.radioFill.Visible = false;
-				end);
-			else
-				entry.radioFill.Visible = false;
-			end
-		end
-	end
-	local function paintOptionRows(animate)
-		for i, entry in ipairs(optionRows) do
-			paintOptionRow(entry, i, animate);
-		end
-	end
-	local function selectIndex(i, silent)
-		index = i;
-		valueLabel.Text = tostring(options[index] or "");
-		paintOptionRows();
-		if not silent then
-			setExpanded(false);
-			onChange(options[index]);
-		end
-	end
-	local function rebuildOptions()
-		for _, entry in ipairs(optionRows) do
-			pcall(function() entry.btn:Destroy(); end);
-		end
-		optionRows = {};
-		for i, opt in ipairs(options) do
-			local optBtn = Instance.new("TextButton");
-			optBtn.Name = "Option";
-			optBtn.AutoButtonColor = false;
-			optBtn.BackgroundColor3 = theme.surfaceElevated;
-			optBtn.BackgroundTransparency = 0.5;
-			optBtn.Size = UDim2.new(1, 0, 0, 34);
-			optBtn.BorderSizePixel = 0;
-			optBtn.Text = "";
-			optBtn.ClipsDescendants = true;
-			optBtn.LayoutOrder = i;
-			optBtn.Parent = listInner;
-			applyCorner(optBtn, 8);
-			local optStroke = applyStroke(optBtn, theme.strokeSoft, 1, 0.65);
-			local optGradient = makeGradient(theme.accentSoft, theme.accentWarm, 90);
-			optGradient.Enabled = false;
-			optGradient.Parent = optBtn;
-			addPressAnimation(optBtn);
-			-- Левая акцент-полоска: узкая, во всю высоту минус отступы, скруглённая -
-			-- появляется/гаснет вместе с остальным состоянием, не анимируется по
-			-- размеру (чтобы не спорить с press-анимацией самой карточки).
-			local optBar = Instance.new("Frame");
-			optBar.Name = "AccentBar";
-			optBar.AnchorPoint = Vector2.new(0, 0.5);
-			optBar.Position = UDim2.new(0, 4, 0.5, 0);
-			optBar.Size = UDim2.new(0, 3, 1, -12);
-			optBar.BackgroundColor3 = theme.accentWarm;
-			optBar.BackgroundTransparency = 1;
-			optBar.BorderSizePixel = 0;
-			optBar.Parent = optBtn;
-			applyCorner(optBar, 2);
-			local optLabel = Instance.new("TextLabel");
-			optLabel.BackgroundTransparency = 1;
-			optLabel.Position = UDim2.fromOffset(16, 0);
-			optLabel.Size = UDim2.new(1, -38, 1, 0);
-			optLabel.Font = Enum.Font.Gotham;
-			optLabel.TextColor3 = theme.textDim;
-			optLabel.TextSize = 12;
-			optLabel.TextXAlignment = Enum.TextXAlignment.Left;
-			optLabel.TextTruncate = Enum.TextTruncate.AtEnd;
-			optLabel.Text = tostring(opt);
-			optLabel.Parent = optBtn;
-			-- Radio-индикатор: внешнее кольцо всегда на месте (как пустой свитч),
-			-- внутренняя точка поп-анимируется Back-easing при выборе - ровно та
-			-- же моторика, что у checkStem/checkArm в createToggle.
-			local radioRing = Instance.new("Frame");
-			radioRing.Name = "RadioRing";
-			radioRing.AnchorPoint = Vector2.new(1, 0.5);
-			radioRing.Position = UDim2.new(1, -12, 0.5, 0);
-			radioRing.Size = UDim2.fromOffset(14, 14);
-			radioRing.BackgroundTransparency = 1;
-			radioRing.Parent = optBtn;
-			applyCorner(radioRing, 7);
-			local radioRingStroke = applyStroke(radioRing, theme.strokeSoft, 1.5, 0.3);
-			local radioFill = Instance.new("Frame");
-			radioFill.Name = "RadioFill";
-			radioFill.AnchorPoint = Vector2.new(0.5, 0.5);
-			radioFill.Position = UDim2.new(0.5, 0, 0.5, 0);
-			radioFill.Size = UDim2.fromOffset(2, 2);
-			radioFill.BackgroundColor3 = theme.accentWarm;
-			radioFill.BorderSizePixel = 0;
-			radioFill.Visible = false;
-			radioFill.Parent = radioRing;
-			applyCorner(radioFill, 4);
-			local entry = {
-				btn = optBtn, lbl = optLabel, stroke = optStroke, gradient = optGradient,
-				bar = optBar, radioRing = radioRing, radioRingStroke = radioRingStroke, radioFill = radioFill,
-			};
-			optBtn.MouseEnter:Connect(function()
-				if i ~= index then
-					tween(optBtn, 0.12, { BackgroundColor3 = theme.surfaceSoft, BackgroundTransparency = 0.3 });
-					tween(optLabel, 0.12, { TextColor3 = theme.text });
-				end
-			end);
-			optBtn.MouseLeave:Connect(function()
-				paintOptionRow(entry, i);
-			end);
-			optBtn.MouseButton1Click:Connect(function()
-				selectIndex(i);
-			end);
-			optionRows[i] = entry;
-		end
-		paintOptionRows(false);
-	end
 	for i, opt in ipairs(options) do
 		if (opt == (default or options[1])) then
 			index = i;
 			break;
 		end
 	end
-	rebuildOptions();
-	valueLabel.Text = tostring(options[index] or "");
+	valueLabel.Text = tostring(options[index]);
 	row.MouseButton1Click:Connect(function()
-		setExpanded(not expanded);
+		index = index + 1;
+		if (index > #options) then
+			index = 1;
+		end
+		valueLabel.Text = tostring(options[index]);
+		onChange(options[index]);
 	end);
 	cfgRegister(cfgKey, function() return options[index]; end, function(v)
 		if (v == nil) then return; end
 		for i, opt in ipairs(options) do
 			if (opt == v) or (tostring(opt) == tostring(v)) then
-				selectIndex(i, true);
+				index = i;
+				valueLabel.Text = tostring(options[index]);
+				onChange(options[index]);
 				return;
 			end
 		end
 	end);
-	registerThemeRepaint(function()
-		row.BackgroundColor3 = theme.surfaceElevated;
-		rowStroke.Color = theme.strokeSoft;
-		label.TextColor3 = theme.text;
-		valueLabel.TextColor3 = theme.accentWarm;
-		chevron.ImageColor3 = theme.textDim;
-		listInner.BackgroundColor3 = theme.surface;
-		-- listInnerStroke - "glassStroke" bindThemeColor, красится сам, трогать не надо.
-		paintOptionRows(false);
-	end);
-
-	local api = {};
-	-- Пересоздать варианты на лету (для динамических списков вроде
-	-- сохранённых конфигов - Settings > Config вызывает это после
-	-- Save/Delete). newDefault опционален - если не найден в newOptions,
-	-- остаётся первый пункт.
-	function api.refresh(newOptions, newDefault)
-		options = newOptions or {};
-		index = 1;
-		for i, opt in ipairs(options) do
-			if (opt == newDefault) then
-				index = i;
-				break;
-			end
-		end
-		rebuildOptions();
-		valueLabel.Text = tostring(options[index] or "— none —");
-		if expanded then
-			if listTween then listTween:Cancel(); listTween = nil; end
-			list.Size = UDim2.new(1, 0, 0, listInner.AbsoluteSize.Y + listPad.PaddingTop.Offset);
-		end
-	end
-	function api.getValue()
-		return options[index];
-	end
-	return api;
+	return row;
 end
 -- ===== Keybind system (ported from source menu): each keybind is an option
 -- object with a mode (Hold / Toggle / Always) and a capture-based rebind =====
--- Обёрнуто в IIFE - своим бюджетом регистров, как и остальные крупные блоки
--- (см. комментарий у "Pages" ниже). Наружу нужны только те 8 имён, что
--- реально читаются за пределами этой секции (проверено grep'ом): сами
--- фабрики createKeybind/createKeybindRow, KeybindOptions (итерация в
--- Settings), keyMatch/keybindCapture (глобальный InputBegan-перехватчик
--- капчура клавиши ниже по файлу), keybindLabelText (обновление текста
--- кнопки при капчуре), KeybindsGui/kbWindowRows (тоггл видимости и список
--- строк плавающего окна кейбиндов).
-local KeybindOptions, keyMatch, keybindLabelText, KeybindsGui, kbWindowRows, keybindCapture, createKeybindRow, createKeybind;
-(function()
-KeybindOptions = {};
+local KeybindOptions = {};
 local function keyName(key)
 	if (type(key) == "table") then
 		key = key.Key or key[1];
@@ -5191,7 +3880,7 @@ local function keyName(key)
 	end
 	return tostring(key);
 end
-function keyMatch(input, keyVal)
+local function keyMatch(input, keyVal)
 	if (type(keyVal) == "table") then
 		keyVal = keyVal.Key or keyVal[1];
 	end
@@ -5216,7 +3905,7 @@ function keyMatch(input, keyVal)
 	end
 	return false;
 end
-function keybindLabelText(opt)
+local function keybindLabelText(opt)
 	local label = keyName(opt.Value);
 	if (opt.__noModeMenu == true) then
 		return label;
@@ -5317,7 +4006,7 @@ local function newKeybindOption(defaultKey, defaultMode, storeModeInValue)
 end
 
 destroyGuiByName("KeybindsGUI");
-KeybindsGui = Instance.new("ScreenGui");
+local KeybindsGui = Instance.new("ScreenGui");
 KeybindsGui.Name = "KeybindsGUI";
 KeybindsGui.ResetOnSpawn = false;
 KeybindsGui.ZIndexBehavior = Enum.ZIndexBehavior.Global;
@@ -5333,13 +4022,13 @@ local KeybindsFrame = Instance.new("Frame");
 KeybindsFrame.Name = "KeybindsFrame";
 KeybindsFrame.Size = UDim2.new(0, 210, 0, 60);
 KeybindsFrame.Position = UDim2.new(0, 20, 0, 88);
-bindThemeColor(KeybindsFrame, "BackgroundColor3", "surface");
+KeybindsFrame.BackgroundColor3 = theme.surface;
 KeybindsFrame.BackgroundTransparency = 0.22;
 KeybindsFrame.BorderSizePixel = 0;
 KeybindsFrame.Parent = KeybindsGui;
 applyCorner(KeybindsFrame, 12);
 local KeybindsStroke = Instance.new("UIStroke");
-bindThemeColor(KeybindsStroke, "Color", "glassStroke");
+KeybindsStroke.Color = theme.glassStroke;
 KeybindsStroke.Thickness = 1;
 KeybindsStroke.Transparency = 0.88;
 KeybindsStroke.Parent = KeybindsFrame;
@@ -5347,7 +4036,7 @@ KeybindsStroke.Parent = KeybindsFrame;
 local KeybindsHeader = Instance.new("Frame");
 KeybindsHeader.Name = "Header";
 KeybindsHeader.Size = UDim2.new(1, 0, 0, 26);
-bindThemeColor(KeybindsHeader, "BackgroundColor3", "surfaceElevated");
+KeybindsHeader.BackgroundColor3 = theme.surfaceElevated;
 KeybindsHeader.BackgroundTransparency = 1;
 KeybindsHeader.BorderSizePixel = 0;
 KeybindsHeader.Parent = KeybindsFrame;
@@ -5359,7 +4048,7 @@ KeybindsTitle.Position = UDim2.fromOffset(12, 0);
 KeybindsTitle.Size = UDim2.new(1, -24, 1, 0);
 KeybindsTitle.Font = Enum.Font.GothamBold;
 KeybindsTitle.TextSize = 12;
-bindThemeColor(KeybindsTitle, "TextColor3", "textDim");
+KeybindsTitle.TextColor3 = theme.textDim;
 KeybindsTitle.TextXAlignment = Enum.TextXAlignment.Left;
 KeybindsTitle.Text = "KEYBINDS";
 KeybindsTitle.Parent = KeybindsHeader;
@@ -5375,7 +4064,7 @@ KeybindsLayout.Padding = UDim.new(0, 3);
 KeybindsLayout.SortOrder = Enum.SortOrder.LayoutOrder;
 KeybindsLayout.Parent = KeybindsBody;
 
-kbWindowRows = {};
+local kbWindowRows = {};
 local function addKeybindWindowRow(labelText, kb)
 	local row = Instance.new("Frame");
 	row.BackgroundTransparency = 1;
@@ -5386,7 +4075,7 @@ local function addKeybindWindowRow(labelText, kb)
 	name.Size = UDim2.new(0, 92, 1, 0);
 	name.Font = Enum.Font.GothamMedium;
 	name.TextSize = 10;
-	bindThemeColor(name, "TextColor3", "textDim");
+	name.TextColor3 = theme.textDim;
 	name.TextXAlignment = Enum.TextXAlignment.Left;
 	name.Text = labelText;
 	name.Parent = row;
@@ -5396,7 +4085,7 @@ local function addKeybindWindowRow(labelText, kb)
 	value.Size = UDim2.new(1, -96, 1, 0);
 	value.Font = Enum.Font.Gotham;
 	value.TextSize = 10;
-	bindThemeColor(value, "TextColor3", "textDim");
+	value.TextColor3 = theme.textDim;
 	value.TextXAlignment = Enum.TextXAlignment.Right;
 	value.Text = "";
 	value.Parent = row;
@@ -5460,7 +4149,7 @@ connectLive(UserInputService.InputEnded, function(input)
 end);
 end
 
-keybindCapture = nil;
+local keybindCapture = nil;
 local function beginCapture(optionObj, button)
 	keybindCapture = {
 		option = optionObj,
@@ -5470,7 +4159,7 @@ local function beginCapture(optionObj, button)
 	button.Text = "Press key... (BS=off)";
 end
 
-function createKeybindRow(parent, caption, optionObj)
+local function createKeybindRow(parent, caption, optionObj)
 	local row = Instance.new("Frame");
 	row.BackgroundColor3 = theme.surfaceElevated;
 	row.BackgroundTransparency = 0.5;
@@ -5478,7 +4167,7 @@ function createKeybindRow(parent, caption, optionObj)
 	row.BorderSizePixel = 0;
 	row.Parent = parent;
 	applyCorner(row, 10);
-	addHover(row, "surfaceElevated", "surfaceSoft");
+	addHover(row, theme.surfaceElevated, theme.surfaceSoft);
 	local label = Instance.new("TextLabel");
 	label.BackgroundTransparency = 1;
 	label.Position = UDim2.fromOffset(14, 10);
@@ -5502,20 +4191,20 @@ function createKeybindRow(parent, caption, optionObj)
 	picker.TextColor3 = theme.accentWarm;
 	picker.Parent = row;
 	applyCorner(picker, 8);
-	local pickerStroke = applyStroke(picker, "strokeSoft", 1, 0.5);
+	applyStroke(picker, theme.strokeSoft, 1, 0.5);
 	addPressAnimation(picker);
 
 	local MODE_H = 92;
 	local modeMenu = Instance.new("Frame");
 	modeMenu.Visible = false;
 	modeMenu.Size = UDim2.fromOffset(132, MODE_H);
-	bindThemeColor(modeMenu, "BackgroundColor3", "surfaceElevated");
+	modeMenu.BackgroundColor3 = theme.surfaceElevated;
 	modeMenu.BackgroundTransparency = 0.35;
 	modeMenu.BorderSizePixel = 0;
 	modeMenu.ZIndex = 999;
 	modeMenu.Parent = Main;
 	applyCorner(modeMenu, 10);
-	applyStroke(modeMenu, "glassStroke", 1, 0.82);
+	applyStroke(modeMenu, theme.glassStroke, 1, 0.82);
 	local modeMenuGradient = Instance.new("UIGradient");
 	modeMenuGradient.Rotation = 90;
 	modeMenuGradient.Color = ColorSequence.new({
@@ -5529,7 +4218,7 @@ function createKeybindRow(parent, caption, optionObj)
 	modeMenuGradient.Parent = modeMenu;
 	local modeMenuSheen = Instance.new("Frame");
 	modeMenuSheen.Name = "GlassSheen";
-	bindThemeColor(modeMenuSheen, "BackgroundColor3", "glassSheen");
+	modeMenuSheen.BackgroundColor3 = theme.glassSheen;
 	modeMenuSheen.BorderSizePixel = 0;
 	modeMenuSheen.Size = UDim2.new(1, 0, 0, 20);
 	modeMenuSheen.ZIndex = 999;
@@ -5620,7 +4309,7 @@ function createKeybindRow(parent, caption, optionObj)
 		modeButton.ZIndex = 1000;
 		modeButton.Parent = modeMenu;
 		applyCorner(modeButton, 6);
-		applyStroke(modeButton, "glassStroke", 1, 0.9);
+		applyStroke(modeButton, theme.glassStroke, 1, 0.9);
 		local grad = makeGradient(theme.accentSoft, theme.accentWarm, 90);
 		grad.Enabled = false;
 		grad.Parent = modeButton;
@@ -5688,17 +4377,10 @@ function createKeybindRow(parent, caption, optionObj)
 	refreshModeButtons();
 	picker.Text = keybindLabelText(optionObj);
 	addKeybindWindowRow(caption, optionObj);
-	registerThemeRepaint(function()
-		row.BackgroundColor3 = theme.surfaceElevated;
-		label.TextColor3 = theme.text;
-		picker.BackgroundColor3 = theme.surface;
-		picker.TextColor3 = theme.accentWarm;
-		pickerStroke.Color = theme.strokeSoft;
-	end);
 	return row;
 end
 -- Compat wrapper: old call sites pass { key, mode, initialState, onKey, apply }.
-function createKeybind(parent, caption, spec)
+local function createKeybind(parent, caption, spec)
 	spec = spec or {};
 	local opt = newKeybindOption(spec.key, spec.mode or "Toggle", false);
 	opt.__toggled = (spec.initialState and true) or false;
@@ -5746,7 +4428,6 @@ function createKeybind(parent, caption, spec)
 	createKeybindRow(parent, caption, opt);
 	return opt;
 end
-end)();
 local function createButton(parent, text, callback)
 	local btn = Instance.new("TextButton");
 	btn.AutoButtonColor = false;
@@ -5759,15 +4440,10 @@ local function createButton(parent, text, callback)
 	btn.Text = text;
 	btn.Parent = parent;
 	applyCorner(btn, 8);
-	local btnStroke = applyStroke(btn, "strokeSoft", 1, 0.5);
-	addHover(btn, "surfaceElevated", "surfaceSoft");
+	applyStroke(btn, theme.strokeSoft, 1, 0.5);
+	addHover(btn, theme.surfaceElevated, theme.surfaceSoft);
 	addPressAnimation(btn);
 	btn.MouseButton1Click:Connect(callback);
-	registerThemeRepaint(function()
-		btn.BackgroundColor3 = theme.surfaceElevated;
-		btn.TextColor3 = theme.text;
-		btnStroke.Color = theme.strokeSoft;
-	end);
 	return btn;
 end
 
@@ -5781,13 +4457,6 @@ local function setTab(name)
 		entry.gradient.Enabled = false;
 		tween(entry.button, 0.16, { BackgroundColor3 = theme.surfaceSoft, BackgroundTransparency = 0.55 });
 		tween(entry.button, 0.16, { TextColor3 = Color3.new(1, 1, 1) });
-		-- Раньше тут не трогали label.TextColor3 вообще - подпись красилась в
-		-- белый ТОЛЬКО через ховер (applyVisual), так что при переключении
-		-- кликом активная вкладка оставалась серой (цвет с момента создания),
-		-- а предыдущая могла застрять белой, если её когда-то наводили.
-		if entry.label then
-			tween(entry.label, 0.16, { TextColor3 = theme.textDim });
-		end
 		if entry.iconImage then
 			entry.iconImage.ImageColor3 = theme.textDim;
 		end
@@ -5810,63 +4479,155 @@ local function setTab(name)
 		if entry.iconImage then
 			entry.iconImage.ImageColor3 = Color3.new(1, 1, 1);
 		end
-		if entry.label then
-			tween(entry.label, 0.2, { TextColor3 = Color3.new(1, 1, 1) });
-		end
 		entry.indicator.Size = UDim2.new(0, 2, 0, 0);
 		tween(entry.button, 0.2, { BackgroundColor3 = theme.accent, BackgroundTransparency = 0.2 });
 		tween(entry.button, 0.2, { TextColor3 = Color3.new(1, 1, 1) });
 		tween(entry.indicator, 0.22, { Size = UDim2.new(0, 2, 0.5, 0) }, Enum.EasingStyle.Back, Enum.EasingDirection.Out);
 	end
 end
+local function iconLine(parent, x1, y1, x2, y2, thickness)
+	thickness = thickness or 2;
+	local dx, dy = x2 - x1, y2 - y1;
+	local len = math.sqrt(dx * dx + dy * dy);
+	if (len < 0.001) then
+		return nil;
+	end
+	local line = Instance.new("Frame");
+	line.BackgroundColor3 = Color3.new(1, 1, 1);
+	line.BorderSizePixel = 0;
+	line.AnchorPoint = Vector2.new(0.5, 0.5);
+	line.Position = UDim2.fromOffset((x1 + x2) / 2, (y1 + y2) / 2);
+	line.Size = UDim2.fromOffset(len, thickness);
+	line.Rotation = math.deg(math.atan2(dy, dx));
+	line.Parent = parent;
+	return line;
+end
+local function iconRing(parent, cx, cy, r, thickness)
+	thickness = thickness or 2;
+	local ring = Instance.new("Frame");
+	ring.BackgroundTransparency = 1;
+	ring.BorderSizePixel = 0;
+	ring.Position = UDim2.fromOffset(cx - r, cy - r);
+	ring.Size = UDim2.fromOffset(r * 2, r * 2);
+	ring.Parent = parent;
+	local corner = Instance.new("UICorner");
+	corner.CornerRadius = UDim.new(1, 0);
+	corner.Parent = ring;
+	local stroke = Instance.new("UIStroke");
+	stroke.Color = Color3.new(1, 1, 1);
+	stroke.Thickness = thickness;
+	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border;
+	stroke.Parent = ring;
+	return ring;
+end
+local function iconDot(parent, cx, cy, r)
+	local dot = Instance.new("Frame");
+	dot.BackgroundColor3 = Color3.new(1, 1, 1);
+	dot.BorderSizePixel = 0;
+	dot.Position = UDim2.fromOffset(cx - r, cy - r);
+	dot.Size = UDim2.fromOffset(r * 2, r * 2);
+	dot.Parent = parent;
+	local corner = Instance.new("UICorner");
+	corner.CornerRadius = UDim.new(1, 0);
+	corner.Parent = dot;
+	return dot;
+end
+local function iconRectOutline(parent, x1, y1, x2, y2, thickness)
+	iconLine(parent, x1, y1, x2, y1, thickness);
+	iconLine(parent, x2, y1, x2, y2, thickness);
+	iconLine(parent, x2, y2, x1, y2, thickness);
+	iconLine(parent, x1, y2, x1, y1, thickness);
+end
+local ICON_ASSETS = {
+	combat = "rbxassetid://10734975692",
+	aim = "rbxassetid://10734977012",
+	visuals = "rbxassetid://10723346959",
+	autoshoot = "rbxassetid://10709818534",
+	misc = "rbxassetid://10747383470",
+	players = "rbxassetid://10747373426",
+	settings = "rbxassetid://10734950309",
+	search = "rbxassetid://10734943674",
+};
+local function drawIcon(parent, kind)
+	if (kind == "combat") then
+		iconLine(parent, 18, 4, 6, 18, 2);
+		iconLine(parent, 6, 14.3, 9.7, 17.5, 2);
+		iconLine(parent, 6, 4, 18, 18, 2);
+		iconLine(parent, 18.1, 14.3, 14.3, 17.5, 2);
+	elseif (kind == "trigger") then
+		iconLine(parent, 15, 2, 5, 13, 2);
+		iconLine(parent, 5, 13, 11, 12, 2);
+		iconLine(parent, 11, 12, 8, 21, 2);
+		iconLine(parent, 8, 21, 18, 10, 2);
+		iconLine(parent, 18, 10, 12, 10, 2);
+		iconLine(parent, 12, 10, 15, 2, 2);
+	elseif (kind == "aim") then
+		iconRing(parent, 11, 11, 5, 2);
+		iconLine(parent, 11, 2, 11, 4, 2);
+		iconLine(parent, 11, 18, 11, 20, 2);
+		iconLine(parent, 2, 11, 4, 11, 2);
+		iconLine(parent, 18, 11, 20, 11, 2);
+	elseif (kind == "visuals") then
+		iconRectOutline(parent, 3, 4, 19, 14, 2);
+		iconLine(parent, 11, 14, 11, 17, 2);
+		iconLine(parent, 8, 17, 14, 17, 2);
+	elseif (kind == "autoshoot") then
+		iconRing(parent, 11, 11, 6, 2);
+		iconRing(parent, 11, 11, 3, 2);
+		iconDot(parent, 11, 11, 1);
+	elseif (kind == "misc") then
+		iconLine(parent, 6, 4, 6, 18, 2);
+		iconLine(parent, 11, 4, 11, 18, 2);
+		iconLine(parent, 16, 4, 16, 18, 2);
+		iconLine(parent, 4, 10, 8, 10, 3);
+		iconLine(parent, 9, 7, 13, 7, 3);
+		iconLine(parent, 14, 13, 18, 13, 3);
+	elseif (kind == "players") then
+		iconRing(parent, 11, 7, 3.5, 2);
+		iconLine(parent, 7, 17, 7, 12, 2);
+		iconLine(parent, 7, 12, 15, 12, 2);
+		iconLine(parent, 15, 12, 15, 17, 2);
+	elseif (kind == "settings") then
+		iconRing(parent, 11, 11, 5.5, 2);
+		iconDot(parent, 11, 11, 1.6);
+		iconLine(parent, 11, 2, 11, 4, 2);
+	end
+end
 local function createTabButton(name, iconId, pageObj)
 	local btn = Instance.new("TextButton");
 	btn.AutoButtonColor = false;
-	btn.Size = UDim2.new(1, 0, 0, 40);
+	btn.Size = UDim2.fromOffset(44, 44);
 	btn.BackgroundColor3 = theme.surfaceSoft;
 	btn.BackgroundTransparency = 0.55;
 	btn.Font = Enum.Font.GothamMedium;
 	btn.Text = "";
 	btn.TextColor3 = theme.textDim;
 	btn.BorderSizePixel = 0;
-	btn.Parent = TabList;
+	btn.Parent = TabBar;
 	applyCorner(btn, 10);
-	local btnStroke = applyStroke(btn, "strokeSoft", 1, 0.7);
+	applyStroke(btn, theme.strokeSoft, 1, 0.7);
 	addPressAnimation(btn);
 	local icon = Instance.new("Frame");
 	icon.Name = "Icon";
 	icon.BackgroundTransparency = 1;
 	icon.Size = UDim2.fromOffset(22, 22);
-	icon.AnchorPoint = Vector2.new(0, 0.5);
-	icon.Position = UDim2.new(0, 12, 0.5, 0);
+	icon.AnchorPoint = Vector2.new(0.5, 0.5);
+	icon.Position = UDim2.new(0.5, 0, 0.5, 0);
 	icon.Parent = btn;
 	local iconImg = nil;
-	local lucideName = ICON_ASSETS[iconId];
-	if lucideName and LUCIDE_ICONS[lucideName] then
+	local iconAsset = ICON_ASSETS[iconId];
+	if iconAsset then
 		iconImg = Instance.new("ImageLabel");
 		iconImg.BackgroundTransparency = 1;
 		iconImg.BorderSizePixel = 0;
 		iconImg.Size = UDim2.new(1, 0, 1, 0);
 		iconImg.ScaleType = Enum.ScaleType.Fit;
-		applyLucideIcon(iconImg, lucideName);
+		iconImg.Image = iconAsset;
 		iconImg.ImageColor3 = theme.textDim;
 		iconImg.Parent = icon;
 	else
 		drawIcon(icon, iconId);
 	end
-	local label = Instance.new("TextLabel");
-	label.Name = "Label";
-	label.BackgroundTransparency = 1;
-	label.AnchorPoint = Vector2.new(0, 0.5);
-	label.Position = UDim2.new(0, 46, 0.5, 0);
-	label.Size = UDim2.new(1, -58, 1, 0);
-	label.Font = Enum.Font.GothamMedium;
-	label.TextSize = 13;
-	label.TextColor3 = theme.textDim;
-	label.TextXAlignment = Enum.TextXAlignment.Left;
-	label.TextTruncate = Enum.TextTruncate.AtEnd;
-	label.Text = name;
-	label.Parent = btn;
 	local tabGradient = makeGradient(theme.accentSoft, theme.accentWarm, 90);
 	tabGradient.Enabled = false;
 	tabGradient.Parent = btn;
@@ -5890,9 +4651,6 @@ local function createTabButton(name, iconId, pageObj)
 		active = false,
 		hovered = false,
 		iconImage = iconImg,
-		label = label,
-		lucideIcon = lucideName,
-		displayName = name,
 	};
 	local function applyVisual()
 		local active = entry.active;
@@ -5904,20 +4662,7 @@ local function createTabButton(name, iconId, pageObj)
 		if iconImg then
 			iconImg.ImageColor3 = (active and Color3.new(1, 1, 1)) or theme.textDim;
 		end
-		label.TextColor3 = (active and Color3.new(1, 1, 1)) or theme.textDim;
 	end
-	entry.refresh = applyVisual;
-	registerThemeRepaint(function()
-		btnStroke.Color = theme.strokeSoft;
-		indicator.BackgroundColor3 = theme.accentSoft;
-		local accentSeq = ColorSequence.new({
-			ColorSequenceKeypoint.new(0, theme.accentSoft),
-			ColorSequenceKeypoint.new(1, theme.accentWarm),
-		});
-		tabGradient.Color = accentSeq;
-		indGradient.Color = accentSeq;
-		applyVisual();
-	end);
 	btn.MouseEnter:Connect(function()
 		entry.hovered = true;
 		applyVisual();
@@ -5954,24 +4699,29 @@ local specGuiRef;
 local autoKeybind;
 local SettingsPage;
 local silentAimToggleSetter;
-local CombatPage, AimPage, EspPage, AutoshootPage, UtilityPage;
 -- Настоящая IIFE (не просто do...end): в Luau каждая функция компилируется в
 -- свой Proto с ОТДЕЛЬНЫМ бюджетом в 200 локальных регистров. do...end — это
 -- просто лексический блок внутри ТОГО ЖЕ чанка, регистры не освобождает для
 -- независимого бюджета, только для повторного использования внутри одной и
 -- той же функции. Без разбивки на реальные функции этот файл (7000+ строк)
--- не компилируется ("Out of local registers... exceeded limit 200").
--- ОДНОЙ общей IIFE на все шесть страниц (Combat+Aim+Esp+Autoshoot+Utility+
--- Settings) оказалось недостаточно - сумма локалов внутри неё сама вылезла
--- за 200 register budget. Поэтому КАЖДАЯ страница теперь в СВОЕЙ отдельной
--- IIFE с собственным Proto/бюджетом; между ними наружу всплывают только
--- page root-объекты (CombatPage/AimPage/.../SettingsPage), форвард-объявленные
--- здесь как upvalue - единственное, что нужно снаружи (createTabButton-вызовы
--- и Block B ниже). Все остальные имена (trigLeft, btSec, semiSec, utilWorld,
--- settingsLeft и т.д.) живут и умирают целиком внутри своей страничной IIFE.
+-- не компилируется ("Out of local registers... exceeded limit 200"). Блок A
+-- и блок B ниже не пересекаются по top-level именам (проверено: единственные
+-- общие имена — specGuiRef/autoKeybind/SettingsPage, уже форвард-объявлены
+-- здесь как upvalue для обоих блоков) — поэтому хватает обычного замыкания,
+-- без stash-таблицы.
 (function()
-CombatPage = createPage("Combat");
+local CombatPage = createPage("Combat");
+local AimPage = createPage("Aim");
+local EspPage = createPage("Visuals");
+local AutoshootPage = createPage("Autoshoot");
+local UtilityPage = createPage("Misc");
+SettingsPage = createPage("Settings");
 table.insert(Pages, CombatPage.root);
+table.insert(Pages, AimPage.root);
+table.insert(Pages, EspPage.root);
+table.insert(Pages, AutoshootPage.root);
+table.insert(Pages, UtilityPage.root);
+table.insert(Pages, SettingsPage.root);
 
 -- ===== Trigger =====
 local trigLeft = createSection(CombatPage, "Triggerbot", "left");
@@ -6010,20 +4760,6 @@ end, "trigger.fovTrigger");
 -- взять неоткуда). resolveWeaponIconsFromBackpack() остаётся как рантайм
 -- fallback: если когда-нибудь появится ещё оружие вне этих четырёх имён, её
 -- иконка подхватится сама через Backpack.ChildAdded/CharacterAdded.
--- Эти 4 id были захардкожены живым сканом Backpack в прошлой сессии -
--- Tool.TextureId часто указывает на PRIVATE-ассет конкретной игры
--- (thumbnails.roblox.com отдаёт на них заглушку "PrivateImage" - одна и та
--- же картинка-плейсхолдер на все 4 id, проверено), т.е. снэпшот мог
--- протухнуть в любой момент и ImageLabel просто рисует пустой квадрат. Из-за
--- этого иконки "пропадали везде, где стояли" - раньше resolveWeaponIconsFromBackpack()
--- скан ПРОПУСКАЛ оружие, если для него уже ЕСТЬ запись в кэше (`not
--- WEAPON_ICON_CACHE[v.Name]`), а есть она для всех 4 - значит живой пересчёт
--- не срабатывал НИКОГДА, даже когда ствол реально лежал в бэкпаке с рабочим
--- TextureId. Теперь живые данные всегда перетирают кэш (self-heal), и КАЖДЫЙ
--- ImageLabel/ImageButton с иконкой оружия регистрируется в общем списке
--- через registerWeaponIcon - раньше регистрировался только первый (строка
--- тогглов Auto Weapon Swap), иконки в Hitbox Expander/Legit popup кэш в
--- принципе не могли получить обновление.
 local WEAPON_ICON_CACHE = {
 	["[Revolver]"] = "rbxassetid://70549548685028",
 	["[Double-Barrel SG]"] = "rbxassetid://136265344426714",
@@ -6031,28 +4767,16 @@ local WEAPON_ICON_CACHE = {
 	["[TacticalShotgun]"] = "rbxassetid://136869042010169",
 };
 local weaponIconImages = {};
-local function registerWeaponIcon(name, img)
-	local list = weaponIconImages[name];
-	if not list then
-		list = {};
-		weaponIconImages[name] = list;
-	end
-	table.insert(list, img);
-end
 local function resolveWeaponIconsFromBackpack()
 	local function scanOne(container)
 		if not container then return; end
 		for _, v in ipairs(container:GetChildren()) do
-			if v:IsA("Tool") then
+			if v:IsA("Tool") and (not WEAPON_ICON_CACHE[v.Name]) then
 				local ok, tex = pcall(function() return v.TextureId; end);
 				if ok and (type(tex) == "string") and (tex ~= "") then
 					WEAPON_ICON_CACHE[v.Name] = tex;
-					local list = weaponIconImages[v.Name];
-					if list then
-						for _, img in ipairs(list) do
-							img.Image = tex;
-						end
-					end
+					local img = weaponIconImages[v.Name];
+					if img then img.Image = tex; end
 				end
 			end
 		end
@@ -6092,11 +4816,11 @@ spamListArrow.Position = UDim2.new(1, -42, 0.5, 0);
 spamListArrow.Size = UDim2.fromOffset(18, 18);
 spamListArrow.BackgroundTransparency = 1;
 spamListArrow.Font = Enum.Font.GothamBold;
-bindThemeColor(spamListArrow, "TextColor3", "textDim");
+spamListArrow.TextColor3 = theme.textDim;
 spamListArrow.TextSize = 14;
 spamListArrow.Text = "»";
 spamListArrow.Parent = damageSpamRow;
-addHover(spamListArrow, "surfaceElevated", "surfaceSoft");
+addHover(spamListArrow, theme.surfaceElevated, theme.surfaceSoft);
 local spamListHolder = Instance.new("Frame");
 spamListHolder.Name = "SpamListHolder";
 spamListHolder.BackgroundTransparency = 1;
@@ -6140,7 +4864,7 @@ for _, w in ipairs(WEAPON_SWAP_TOGGLE_LIST) do
 	icon.ScaleType = Enum.ScaleType.Fit;
 	icon.Image = WEAPON_ICON_CACHE[w.name] or "";
 	icon.Parent = wRow;
-	registerWeaponIcon(w.name, icon);
+	weaponIconImages[w.name] = weaponIconImages[w.name] or icon;
 	local captionLabel = wRow:FindFirstChildOfClass("TextLabel");
 	if captionLabel then
 		captionLabel.Position = UDim2.fromOffset(44, 10);
@@ -6187,7 +4911,7 @@ do
 	btHint.AutomaticSize = Enum.AutomaticSize.Y;
 	btHint.Font = Enum.Font.Gotham;
 	btHint.TextSize = 11;
-	bindThemeColor(btHint, "TextColor3", "textDim");
+	btHint.TextColor3 = theme.textDim;
 	btHint.TextWrapped = true;
 	btHint.TextXAlignment = Enum.TextXAlignment.Left;
 	btHint.Text = "Бокс рисуется только для игрока с ролью Trigger в плеер-листе (Players).";
@@ -6277,9 +5001,8 @@ do
 		iconBtn.ScaleType = Enum.ScaleType.Fit;
 		iconBtn.Parent = iconRow;
 		applyCorner(iconBtn, 8);
-		applyStroke(iconBtn, "strokeSoft", 1, 0.5);
-		addHover(iconBtn, "surfaceElevated", "surfaceSoft");
-		registerWeaponIcon(w.name, iconBtn);
+		applyStroke(iconBtn, theme.strokeSoft, 1, 0.5);
+		addHover(iconBtn, theme.surfaceElevated, theme.surfaceSoft);
 
 		-- Высота с запасом под 3 слайдера (50px каждый) + хэдер(28) + паддинги.
 		local popup = Instance.new("Frame");
@@ -6314,7 +5037,6 @@ do
 		popupIcon.ScaleType = Enum.ScaleType.Fit;
 		popupIcon.Image = WEAPON_ICON_CACHE[w.name] or "";
 		popupIcon.Parent = popupHeader;
-		registerWeaponIcon(w.name, popupIcon);
 
 		local popupTitle = Instance.new("TextLabel");
 		popupTitle.BackgroundTransparency = 1;
@@ -6554,10 +5276,6 @@ do
 	};
 end
 
-end)();
-(function()
-AimPage = createPage("Aim");
-table.insert(Pages, AimPage.root);
 -- ===== Aim: Silent Aim =====
 local aimLeft = createSection(AimPage, "Silent Aim", "left");
 silentAimToggleSetter = createToggle(aimLeft, "Enable Silent Aim", Config.SilentAim.Enabled, function(v)
@@ -6630,10 +5348,6 @@ createSlider(legitSec, "Miss Chance (%)", 0, 100, Config.SilentAim.Legit.MissPer
 end, 0, "silentAim.legitMissPercent");
 updateSilentModeSections(Config.SilentAim.Mode);
 
-end)();
-(function()
-EspPage = createPage("Visuals");
-table.insert(Pages, EspPage.root);
 -- ===== Visuals: ESP (порт из backup.lua) — работает только на таргет =====
 local espSection = createSection(EspPage, "ESP", "left");
 createToggle(espSection, "Enable ESP", Config.Esp.Enabled, function(v)
@@ -6661,10 +5375,6 @@ end, "esp.nameColor", Color3.fromRGB(255, 255, 255));
 createColorRow(espSection, "HP Color", function() return Config.Esp.HpColor; end, function(c)
 	Config.Esp.HpColor = c;
 end, "esp.hpColor", Color3.fromRGB(255, 255, 255));
-end)();
-(function()
-AutoshootPage = createPage("Autoshoot");
-table.insert(Pages, AutoshootPage.root);
 -- ===== Autoshoot =====
 local autoLeft = createSection(AutoshootPage, "Autoshoot", "left");
 createToggle(autoLeft, "Enable Autoshoot", Config.Autoshoot.Active, function(v)
@@ -6688,10 +5398,6 @@ createDropdown(autoLeft, "Click Mode", { "Multi", "Single" }, (Config.Autoshoot.
 	Config.Autoshoot.ShotsPerTrigger = (v == "Multi") and 6 or 1;
 end, "autoshoot.clickMode");
 
-end)();
-(function()
-UtilityPage = createPage("Misc");
-table.insert(Pages, UtilityPage.root);
 -- ===== Utility =====
 local utilWeapons = createSection(UtilityPage, "Weapons", "left");
 local setAutoReloadToggle = createToggle(utilWeapons, "Auto Reload", Config.Utility.AutoReload, function(v)
@@ -6836,10 +5542,71 @@ createKeybind(utilMacro, "Auto Macro", {
 	end,
 });
 
-end)();
-(function()
-SettingsPage = createPage("Settings");
-table.insert(Pages, SettingsPage.root);
+-- ===== Aim Trainer Teleport =====
+local aimTrainerBusy = false;
+local function findAimTrainerRemote()
+	local ok, rs = pcall(function() return game:GetService("ReplicatedStorage"); end);
+	if (not ok) or (not rs) then return nil; end
+	local box = rs:FindFirstChild("AimTrainer");
+	if (not box) then return nil; end
+	local req = box:FindFirstChild("Request");
+	if (not (req and req:IsA("RemoteEvent"))) then return nil; end
+	return req;
+end
+local function aimTrainerAction()
+	if aimTrainerBusy then return; end
+	local req = findAimTrainerRemote();
+	if (not req) then return; end
+	aimTrainerBusy = true;
+	task.spawn(function()
+		local settings = {
+			Armor = 200,
+			InfinityAmmo = true,
+			BotShooting = false,
+			BotArmor = 0,
+			BotCount = 1,
+			BotDistance = 2,
+			BotHitChance = 50,
+			BotInfinityAmmo = true,
+			BotJumping = true,
+			BotSpamsKnife = false,
+			BotStrafeFrequency = 50,
+		};
+		pcall(function()
+			req:FireServer("Start", settings);
+		end);
+		local dur = Config.Utility.AimTrainer.DurationSec;
+		if (type(dur) ~= "number") then dur = 1; end
+		dur = math.clamp(dur, 0, 10);
+		if dur > 0 then
+			task.wait(dur);
+			if ((getgenv and getgenv()) or _G).emolineUnloaded then return; end
+		end
+		pcall(function()
+			req:FireServer("Stop");
+		end);
+		aimTrainerBusy = false;
+	end);
+end
+createKeybind(utilMacro, "Aim Trainer", {
+	key = Config.Utility.AimTrainer.Key,
+	mode = "Press",
+	noModeMenu = true,
+	initialState = false,
+	cfgKey = "util.atKey",
+	onKey = function(key)
+		Config.Utility.AimTrainer.Key = key;
+	end,
+	apply = function(v)
+		if v then
+			task.spawn(aimTrainerAction);
+		end
+	end,
+});
+createSlider(utilMacro, "TL Duration (s)", 0, 10, Config.Utility.AimTrainer.DurationSec, function(v)
+	Config.Utility.AimTrainer.DurationSec = v;
+end, 1, "util.atDurationSec");
+
 -- ===== Settings =====
 local settingsLeft = createSection(SettingsPage, "Menu", "left");
 createKeybind(settingsLeft, "Menu Key", {
@@ -6881,11 +5648,11 @@ kbListArrow.Position = UDim2.new(1, -42, 0.5, 0);
 kbListArrow.Size = UDim2.fromOffset(18, 18);
 kbListArrow.BackgroundTransparency = 1;
 kbListArrow.Font = Enum.Font.GothamBold;
-bindThemeColor(kbListArrow, "TextColor3", "textDim");
+kbListArrow.TextColor3 = theme.textDim;
 kbListArrow.TextSize = 14;
 kbListArrow.Text = "»";
 kbListArrow.Parent = showKbRow;
-addHover(kbListArrow, "surfaceElevated", "surfaceSoft");
+addHover(kbListArrow, theme.surfaceElevated, theme.surfaceSoft);
 local kbListHolder = Instance.new("Frame");
 kbListHolder.Name = "KbListHolder";
 kbListHolder.BackgroundTransparency = 1;
@@ -6998,160 +5765,12 @@ end, 0, "settings.menuBlurPercent");
 createSlider(settingsAppearance, "Title Shimmer Speed (s/loop)", 1, 10, Config.TitleShimmerSpeed, function(v)
 	Config.TitleShimmerSpeed = v;
 end, 1, "settings.titleShimmerSpeed");
--- ===== Themes: пресеты + ручные цвета всего меню =====
--- Пресет - мгновенно задаёт согласованный набор тонов (applyThemePreset,
--- один repaint). Ручные свотчи ниже - тот же applyThemeColor/applyThemePreset,
--- просто по одному каналу - оба пути проходят через общий registerThemeRepaint
--- (см. верх файла, "Живая перекраска темы"), так что перекрашивается ВЕСЬ уже
--- построенный UI, а не только то, что создастся после.
-local settingsThemes = createSection(SettingsPage, "Themes", "left");
-createDropdown(settingsThemes, "Preset", THEME_PRESET_NAMES, THEME_PRESET_NAMES[1], function(v)
-	local preset = THEME_PRESETS[v];
-	if preset then
-		applyThemePreset(preset);
-	end
-end, "theme.preset");
-createColorRow(settingsThemes, "Accent", function() return theme.accent; end, function(c)
-	local h, s, v = c:ToHSV();
-	applyThemePreset({
-		accent = c,
-		accentSoft = Color3.fromHSV(h, math.min(s * 1.1, 1), v * 0.75),
-		accentWarm = Color3.fromHSV(h, s * 0.55, math.min(v * 1.15, 1)),
-	});
-end, "theme.accent", Color3.fromRGB(255, 175, 50));
-createColorRow(settingsThemes, "Drag Outline", function() return dragAccentBase(); end, function(c)
-	dragAccentOverride = c;
-	repaintDragAccent();
-end, "theme.dragAccent", Color3.fromRGB(255, 175, 50));
-createColorRow(settingsThemes, "Background", function() return theme.bg; end, function(c)
-	local h, s, v = c:ToHSV();
-	applyThemePreset({
-		bg = c,
-		surface = Color3.fromHSV(h, s, math.min(v + 0.03, 1)),
-		surfaceSoft = Color3.fromHSV(h, s, math.min(v + 0.07, 1)),
-		surfaceElevated = Color3.fromHSV(h, s, math.min(v + 0.11, 1)),
-	});
-end, "theme.bg", Color3.fromRGB(10, 10, 10));
-createColorRow(settingsThemes, "Surface", function() return theme.surface; end, function(c)
-	applyThemeColor("surface", c);
-end, "theme.surface", Color3.fromRGB(18, 18, 18));
-createColorRow(settingsThemes, "Text", function() return theme.text; end, function(c)
-	applyThemeColor("text", c);
-end, "theme.text", Color3.fromRGB(235, 235, 235));
-
--- ===== Advanced Colors: КАЖДОЕ поле theme по отдельности =====
--- "Accent"/"Background"/"Surface"/"Text" выше - удобные "умные" свотчи,
--- каждый разом двигает согласованную группу тонов. Тут - прямой доступ к
--- любому из 16 полей theme без какой-либо производной логики, по одному
--- каналу за раз (то, что просили: "абсолютно все цвета", не только то, что
--- трогают умные свотчи).
-local settingsAdvancedColors = createSection(SettingsPage, "Advanced Colors", "left");
-local ADVANCED_COLOR_FIELDS = {
-	{ "surfaceSoft", "Surface Soft" },
-	{ "surfaceElevated", "Surface Elevated" },
-	{ "accentSoft", "Accent Soft" },
-	{ "accentWarm", "Accent Warm" },
-	{ "textDim", "Text Dim" },
-	{ "danger", "Danger" },
-	{ "dangerSoft", "Danger Soft" },
-	{ "dangerWarm", "Danger Warm" },
-	{ "stroke", "Stroke" },
-	{ "strokeSoft", "Stroke Soft" },
-	{ "glassStroke", "Glass Stroke" },
-	{ "glassSheen", "Glass Sheen" },
-};
-for _, field in ipairs(ADVANCED_COLOR_FIELDS) do
-	local key, label = field[1], field[2];
-	createColorRow(settingsAdvancedColors, label, function()
-		return theme[key];
-	end, function(c)
-		applyThemeColor(key, c);
-	end, "theme." .. key, theme[key]);
-end
-
--- ===== Background: картинка-фон меню + снег/дождь =====
-local settingsBackground = createSection(SettingsPage, "Background", "left");
-createDropdown(settingsBackground, "Wallpaper", BACKGROUND_NAMES, BACKGROUND_NAMES[1], function(v)
-	applyMenuBackground(v);
-end, "settings.background");
-local currentWeatherMode = WEATHER_NAMES[1];
-createDropdown(settingsBackground, "Weather", WEATHER_NAMES, WEATHER_NAMES[1], function(v)
-	currentWeatherMode = v;
-	spawnWeather(v);
-end, "settings.weather");
-createSlider(settingsBackground, "Weather Intensity (%)", 25, 200, weatherIntensity * 100, function(v)
-	weatherIntensity = v / 100;
-	spawnWeather(currentWeatherMode);
-end, 0, "settings.weatherIntensity");
-
 local settingsConfig = createSection(SettingsPage, "Config", "right");
--- Список сохранённых конфигов - та же раскрывающаяся карточка-список, что и
--- везде (createDropdown), просто со списком, который меняется на лету
--- (Save/Delete зовут cfgPicker.refresh()) - для этого createDropdown и умеет
--- .refresh(newOptions, newDefault).
-local cfgPickerNamesInit = cfgListConfigNames();
-local cfgPicker = createDropdown(
-	settingsConfig,
-	"Saved Config",
-	(#cfgPickerNamesInit > 0) and cfgPickerNamesInit or { "— none —" },
-	cfgPickerNamesInit[1],
-	function() end
-);
-
-local cfgNameBox = Instance.new("TextBox");
-cfgNameBox.Size = UDim2.new(1, 0, 0, 34);
-cfgNameBox.BackgroundColor3 = theme.surfaceElevated;
-cfgNameBox.BackgroundTransparency = 0.5;
-cfgNameBox.BorderSizePixel = 0;
-cfgNameBox.Font = Enum.Font.Gotham;
-cfgNameBox.TextColor3 = theme.text;
-cfgNameBox.TextSize = 12;
-cfgNameBox.PlaceholderText = "new config name...";
-cfgNameBox.PlaceholderColor3 = theme.textDim;
-cfgNameBox.ClearTextOnFocus = false;
-cfgNameBox.Text = "";
-cfgNameBox.Parent = settingsConfig;
-applyCorner(cfgNameBox, 8);
-local cfgNameBoxStroke = applyStroke(cfgNameBox, "strokeSoft", 1, 0.5);
-local cfgNamePad = Instance.new("UIPadding");
-cfgNamePad.PaddingLeft = UDim.new(0, 12);
-cfgNamePad.PaddingRight = UDim.new(0, 12);
-cfgNamePad.Parent = cfgNameBox;
-registerThemeRepaint(function()
-	cfgNameBox.BackgroundColor3 = theme.surfaceElevated;
-	cfgNameBox.TextColor3 = theme.text;
-	cfgNameBox.PlaceholderColor3 = theme.textDim;
-	cfgNameBoxStroke.Color = theme.strokeSoft;
+createButton(settingsConfig, "Save Config", function()
+	cfgSaveConfig();
 end);
-
-local function cfgPickerRefresh(keepName)
-	local names = cfgListConfigNames();
-	if (#names == 0) then
-		cfgPicker.refresh({ "— none —" }, "— none —");
-	else
-		cfgPicker.refresh(names, keepName or names[1]);
-	end
-end
-createButton(settingsConfig, "Save As New", function()
-	local name = cfgSanitizeName(cfgNameBox.Text);
-	if not name then return; end
-	if cfgSaveConfigAs(name) then
-		cfgNameBox.Text = "";
-		cfgPickerRefresh(name);
-	end
-end);
-createButton(settingsConfig, "Load Selected", function()
-	local selected = cfgPicker.getValue();
-	if selected and (selected ~= "— none —") then
-		cfgLoadConfigAs(selected);
-	end
-end);
-createButton(settingsConfig, "Delete Selected", function()
-	local selected = cfgPicker.getValue();
-	if selected and (selected ~= "— none —") then
-		cfgDeleteConfigAs(selected);
-		cfgPickerRefresh();
-	end
+createButton(settingsConfig, "Load Config", function()
+	cfgLoadConfig();
 end);
 local settingsSafety = createSection(SettingsPage, "Safety", "right");
 createToggle(settingsSafety, "Panic Mode", Config.PanicMode.Enabled, function(v)
@@ -7257,7 +5876,7 @@ createButton(settingsUnload, "Unload Script", function()
 	env.emolineShootHooked = nil;
 	env.emolineUnloaded = true;
 end);
-end)();
+
 
 -- ===== Tab keys handled by the centralized keybind system above =====
 createTabButton("Combat", "combat", CombatPage);
@@ -7265,6 +5884,7 @@ createTabButton("Aim", "aim", AimPage);
 createTabButton("Visuals", "visuals", EspPage);
 createTabButton("Autoshoot", "autoshoot", AutoshootPage);
 createTabButton("Misc", "misc", UtilityPage);
+end)();
 (function()
 local PlayersPageRoot = Instance.new("Frame");
 PlayersPageRoot.Name = "PlayersPage";
@@ -7284,10 +5904,6 @@ task.spawn(function()
 		end
 	end
 end);
--- Alias на тот же Config.SilentAim.Backtrack, что инициализирован в движке Silent
--- Aim (другая IIFE, другой lexical scope) - bare "Backtrack" здесь раньше резолвился
--- в несуществующий global и валил "attempt to index nil with 'ShowHitbox'" в RenderStepped.
-local Backtrack = Config.SilentAim.Backtrack;
 -- ===== Backtrack aim helper для триггеров: true если прицел (mousePos) находится
 -- в экранной проекции ОТКАТАННОГО хитбокса 8x8x4 игрока (Backtrack.Enabled).
 -- Триггер стреляет по старой позиции, т.к. silent aim уже редиректит пулю туда. =====
@@ -7667,61 +6283,10 @@ task.spawn(function()
 		end
 	end
 end);
--- ===== Trigger Mode 3 (переписан с нуля) =====
--- Три апгрейда над старой версией, все нацелены на НОЛЬ пропущенных попаданий
--- (false negative - прицел реально на игроке, но триггер это не увидел),
--- не на агрессию (false positive - стрельбу туда, где прицела на самом деле
--- нет, это уже аимбот, а не триггер):
---  1. Кластер из 7 рейкастов (центр + 6 точек на радиусе 4px), не один
---     хрупкий луч через ровно пиксель мыши - гасит субпиксельное дрожание
---     анимации/сети между тиком детекта и реальным выстрелом.
---  2. Приоритет на РЕАЛЬНЫЙ серверный part "Hitbox" (8x8x4), если он есть у
---     цели - именно по нему сервер решает "попал/не попал" (см.
---     ExamsAC/sizeLooksSuspicious), а не по visible-мешу руки/ноги, который
---     может быть тоньше модели и давать ложный промах мимо фактической
---     hit-геометрии.
---  3. Единая scored-выборка ЛУЧШЕЙ цели (ближайшей к прицелу на экране) для
---     ОБОИХ режимов Player/Hitbox - раньше Player-режим стрелял по первому
---     попавшемуся в порядке Players:GetPlayers(), что на пересекающихся
---     силуэтах могло выбрать не того, кто реально под прицелом.
--- Плюс per-weapon range cap (как в Mode 2) - не пытается стрелять на
--- дистанции, где оружие физически не достаёт, даже если слайдер MaxRange
--- выставлен больше.
+-- ===== Trigger Mode 3 (порт триггера из emoline hub): Player/Hitbox, screen-space =====
+-- Оригинальный эмолин-триггер: режим Player — рейкаст по центру экрана,
+-- режим Hitbox — попадание курсора в проекцию хитбокса на экран + WallCheck.
 task.spawn(function()
-	local function weaponMaxRange(toolName)
-		if toolName == "[Revolver]" then return 165; end
-		if toolName == "[Double-Barrel SG]" then return 120; end
-		if toolName == "[Shotgun]" then return 95; end
-		if toolName == "[TacticalShotgun]" then return 65; end
-		return nil;
-	end
-	local SAMPLE_OFFSETS = { Vector2.new(0, 0) };
-	do
-		local radius, count = 4, 6;
-		for i = 0, count - 1 do
-			local a = (i / count) * (2 * math.pi);
-			table.insert(SAMPLE_OFFSETS, Vector2.new(math.cos(a) * radius, math.sin(a) * radius));
-		end
-	end
-	local function raycastPlayerAt(screenPos, cam, ignoreList)
-		local params = RaycastParams.new();
-		params.FilterType = Enum.RaycastFilterType.Exclude;
-		params.FilterDescendantsInstances = ignoreList;
-		local ray = cam:ViewportPointToRay(screenPos.X, screenPos.Y);
-		local hit = workspace:Raycast(ray.Origin, ray.Direction * 1000, params);
-		if not (hit and hit.Instance) then return nil; end
-		local model = hit.Instance:FindFirstAncestorOfClass("Model");
-		if not model then return nil; end
-		local ok, pl = pcall(function() return Players:GetPlayerFromCharacter(model); end);
-		return ok and pl or nil;
-	end
-	local function clusterHitsCharacter(mousePos, cam, ignoreList, char)
-		for _, off in ipairs(SAMPLE_OFFSETS) do
-			local pl = raycastPlayerAt(Vector2.new(mousePos.X + off.X, mousePos.Y + off.Y), cam, ignoreList);
-			if pl and pl.Character == char then return true; end
-		end
-		return false;
-	end
 	local function getHitboxScreenBounds(hrp, cam)
 		-- Размер берётся из Hitbox Expander (Config.Combat.HitboxExpander),
 		-- не из реального hrp.Size цели - это чисто экранная проекция
@@ -7756,16 +6321,20 @@ task.spawn(function()
 		if minX == math.huge then return nil; end
 		return minX, minY, maxX, maxY;
 	end
-	local function hasWallLOS(origin, targetPos, worldDist, ignoreList, expectPlayer)
-		local direction = targetPos - origin;
-		if direction.Magnitude < 1e-3 then return true; end
+	local function isMouseOverPlayer(player, mousePos, cam, ignoreList)
+		local char = player.Character;
+		if not char then return false; end
+		local part = getPrimaryPart(char);
+		if not part then return false; end
 		local params = RaycastParams.new();
 		params.FilterType = Enum.RaycastFilterType.Exclude;
 		params.FilterDescendantsInstances = ignoreList;
-		local hit = workspace:Raycast(origin, direction.Unit * worldDist, params);
-		if not hit then return true; end
-		local hitPlayer = Players:GetPlayerFromCharacter(hit.Instance:FindFirstAncestorOfClass("Model"));
-		return hitPlayer == expectPlayer;
+		local ray = cam:ViewportPointToRay(mousePos.X, mousePos.Y);
+		local hit = workspace:Raycast(ray.Origin, ray.Direction * 1000, params);
+		if hit and hit.Instance then
+			return hit.Instance:IsDescendantOf(char);
+		end
+		return false;
 	end
 	while true do
 		RunService.Heartbeat:Wait();
@@ -7776,16 +6345,13 @@ task.spawn(function()
 		if ((tick() - Config.Trigger.LastShot) < Config.Trigger.Delay) then continue; end
 		if not HasAmmo() then continue; end
 		local currentRange = GetCurrentRange();
-		local myChar = LocalPlayer.Character;
-		local myTool = myChar and myChar:FindFirstChildOfClass("Tool");
-		local wRange = myTool and weaponMaxRange(myTool.Name);
-		if wRange and (wRange < currentRange) then currentRange = wRange; end
-		local cam = Camera;
 		local mousePos = UserInputService:GetMouseLocation();
+		local bestTarget = nil;
+		local minMag = 50;
 		local mode = Config.Trigger.Mode;
 		local ignoreList = { LocalPlayer.Character };
-		if myChar then
-			for _, tool in ipairs(myChar:GetChildren()) do
+		if LocalPlayer.Character then
+			for _, tool in ipairs(LocalPlayer.Character:GetChildren()) do
 				if tool:IsA("Tool") then
 					table.insert(ignoreList, tool);
 				end
@@ -7802,40 +6368,52 @@ task.spawn(function()
 			triggerWeaponSwap();
 			continue;
 		end
-		local bestTarget, bestMag = nil, math.huge;
 		for _, p in pairs(Players:GetPlayers()) do
 			if p == LocalPlayer then continue; end
 			if GetPlayerMode(p.Name) ~= MODE_TRIGGER then continue; end
 			if not isAlive(p) or isKnockedOut(p) then continue; end
 			local char = p.Character;
 			if not char then continue; end
-			local part = char:FindFirstChild("Hitbox") or getPrimaryPart(char);
+			local part = getPrimaryPart(char);
 			if not part then continue; end
-			local worldDist = (cam.CFrame.Position - part.Position).Magnitude;
+			local worldDist = (Camera.CFrame.Position - part.Position).Magnitude;
 			if worldDist > currentRange then continue; end
-			local canShoot, screenMag = false, math.huge;
-			local screenPos = cam:WorldToViewportPoint(part.Position);
+			local canShoot = false;
 			if mode == "Player" then
-				if clusterHitsCharacter(mousePos, cam, ignoreList, char) then
-					canShoot = true;
-					screenMag = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude;
-				end
+				canShoot = isMouseOverPlayer(p, mousePos, Camera, ignoreList);
 			else
-				local minX, minY, maxX, maxY = getHitboxScreenBounds(part, cam);
-				if minX and (mousePos.X >= minX) and (mousePos.X <= maxX) and (mousePos.Y >= minY) and (mousePos.Y <= maxY) then
-					canShoot = true;
-					screenMag = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude;
-				end
-				if canShoot and Config.Trigger.WallCheck then
-					canShoot = hasWallLOS(cam.CFrame.Position, part.Position, worldDist, ignoreList, p);
+				local minX, minY, maxX, maxY = getHitboxScreenBounds(part, Camera);
+				if minX and maxX then
+					if mousePos.X >= minX and mousePos.X <= maxX and mousePos.Y >= minY and mousePos.Y <= maxY then
+						if Config.Trigger.WallCheck then
+							local direction = (part.Position - Camera.CFrame.Position).Unit;
+							local ray = Ray.new(Camera.CFrame.Position, direction * worldDist);
+							local hit = workspace:FindPartOnRayWithIgnoreList(ray, ignoreList);
+							if hit then
+								local hitPlayer = Players:GetPlayerFromCharacter(hit:FindFirstAncestorOfClass("Model"));
+								canShoot = (hitPlayer == p);
+							end
+						else
+							canShoot = true;
+						end
+					end
 				end
 			end
-			if (not canShoot) and btTriggerOnTarget(p, mousePos) then
-				canShoot = true;
-				screenMag = 0;
+			if not canShoot then
+				canShoot = btTriggerOnTarget(p, mousePos);
 			end
-			if canShoot and (screenMag < bestMag) then
-				bestTarget, bestMag = p, screenMag;
+			if canShoot then
+				if mode == "Hitbox" then
+					local screenPos, _ = Camera:WorldToViewportPoint(part.Position);
+					local mag = (Vector2.new(screenPos.X, screenPos.Y) - mousePos).Magnitude;
+					if mag < minMag then
+						bestTarget = p;
+						minMag = mag;
+					end
+				else
+					bestTarget = p;
+					break;
+				end
 			end
 		end
 		if bestTarget then
@@ -8024,11 +6602,7 @@ actionBtnRow.Position = UDim2.new(0, 12, 0, 16);
 actionBtnRow.BackgroundTransparency = 1;
 actionBtnRow.Parent = PlayersPageRoot;
 local actionState = {};
--- fromKey/toKey - ИМЕНА полей theme ("accentSoft"/"accentWarm" и т.п.), не
--- готовые Color3 - та же причина, что у addHover: градиент, залитый готовым
--- цветом один раз при создании, не замечает смену темы (TRIGGER ALL
--- оставалась старого цвета после Settings > Themes).
-local function makeActionButton(parent, size, pos, text, fromKey, toKey)
+local function makeActionButton(parent, size, pos, text, fromColor, toColor)
 	local bg = Instance.new("Frame");
 	bg.Size = size;
 	bg.Position = pos;
@@ -8036,16 +6610,8 @@ local function makeActionButton(parent, size, pos, text, fromKey, toKey)
 	bg.BorderSizePixel = 0;
 	bg.Parent = parent;
 	applyCorner(bg, 6);
-	local bgStroke = applyStroke(bg, "strokeSoft", 1, 0.5);
-	local bgGradient = makeGradient(theme[fromKey], theme[toKey], 90);
-	bgGradient.Parent = bg;
-	registerThemeRepaint(function()
-		bgStroke.Color = theme.strokeSoft;
-		bgGradient.Color = ColorSequence.new({
-			ColorSequenceKeypoint.new(0, theme[fromKey]),
-			ColorSequenceKeypoint.new(1, theme[toKey]),
-		});
-	end);
+	applyStroke(bg, theme.strokeSoft, 1, 0.5);
+	makeGradient(fromColor, toColor, 90).Parent = bg;
 	local hover = Instance.new("Frame");
 	hover.BackgroundColor3 = Color3.new(1, 1, 1);
 	hover.BackgroundTransparency = 1;
@@ -8072,8 +6638,8 @@ local function makeActionButton(parent, size, pos, text, fromKey, toKey)
 	end);
 	return btn;
 end
-local ResetAllBtn = makeActionButton(actionBtnRow, UDim2.new(0.48, -4, 1, 0), UDim2.new(0, 0, 0, 0), "RESET ALL", "dangerSoft", "dangerWarm");
-local TriggerAllBtn = makeActionButton(actionBtnRow, UDim2.new(0.48, -4, 1, 0), UDim2.new(0.52, 0, 0, 0), "TRIGGER ALL", "accentSoft", "accentWarm");
+local ResetAllBtn = makeActionButton(actionBtnRow, UDim2.new(0.48, -4, 1, 0), UDim2.new(0, 0, 0, 0), "RESET ALL", theme.dangerSoft, theme.dangerWarm);
+local TriggerAllBtn = makeActionButton(actionBtnRow, UDim2.new(0.48, -4, 1, 0), UDim2.new(0.52, 0, 0, 0), "TRIGGER ALL", theme.accentSoft, theme.accentWarm);
 local searchRow = Instance.new("Frame");
 searchRow.Size = UDim2.new(1, -24, 0, 30);
 searchRow.Position = UDim2.new(0, 12, 0, 60);
@@ -8096,12 +6662,8 @@ viewToggleBtn.Text = "CREWS";
 viewToggleBtn.AutoButtonColor = false;
 viewToggleBtn.Parent = searchRow;
 applyCorner(viewToggleBtn, 6);
-applyStroke(viewToggleBtn, "strokeSoft", 1, 0.5);
+applyStroke(viewToggleBtn, theme.strokeSoft, 1, 0.5);
 local showCrewList = false;
-registerThemeRepaint(function()
-	viewToggleBtn.BackgroundColor3 = showCrewList and theme.surfaceSoft or theme.surfaceElevated;
-	viewToggleBtn.TextColor3 = theme.text;
-end);
 viewToggleBtn.MouseButton1Click:Connect(function()
 	showCrewList = not showCrewList;
 	viewToggleBtn.Text = showCrewList and "PLAYERS" or "CREWS";
@@ -8120,20 +6682,20 @@ end);
 local searchBox = Instance.new("TextBox");
 searchBox.Size = UDim2.new(1, -92, 1, 0);
 searchBox.Position = UDim2.new(0, 92, 0, 0);
-bindThemeColor(searchBox, "BackgroundColor3", "surfaceSoft");
+searchBox.BackgroundColor3 = theme.surfaceSoft;
 searchBox.BackgroundTransparency = 0.3;
 searchBox.BorderSizePixel = 0;
 searchBox.Font = Enum.Font.GothamMedium;
 searchBox.TextSize = 13;
 searchBox.TextColor3 = Color3.new(1, 1, 1);
 searchBox.PlaceholderText = "search players";
-bindThemeColor(searchBox, "PlaceholderColor3", "textDim");
+searchBox.PlaceholderColor3 = theme.textDim;
 searchBox.ClearTextOnFocus = false;
 searchBox.Text = "";
 searchBox.TextXAlignment = Enum.TextXAlignment.Center;
 searchBox.Parent = searchRow;
 applyCorner(searchBox, 6);
-applyStroke(searchBox, "strokeSoft", 1, 0.5);
+applyStroke(searchBox, theme.strokeSoft, 1, 0.5);
 local searchIcon = Instance.new("Frame");
 searchIcon.Name = "SearchIcon";
 searchIcon.BackgroundTransparency = 1;
@@ -8147,7 +6709,7 @@ searchImg.BorderSizePixel = 0;
 searchImg.Size = UDim2.new(1, 0, 1, 0);
 searchImg.ScaleType = Enum.ScaleType.Fit;
 searchImg.Image = ICON_ASSETS.search or "rbxassetid://10734943674";
-bindThemeColor(searchImg, "ImageColor3", "textDim");
+searchImg.ImageColor3 = theme.textDim;
 searchImg.Parent = searchIcon;
 local crewNameCache = getgenv().crewNameCache;
 if (type(crewNameCache) ~= "table") then
@@ -8235,12 +6797,12 @@ end
 local HeaderRow = Instance.new("Frame");
 HeaderRow.Size = UDim2.new(1, -24, 0, 32);
 HeaderRow.Position = UDim2.new(0, 12, 0, 96);
-bindThemeColor(HeaderRow, "BackgroundColor3", "surfaceElevated");
+HeaderRow.BackgroundColor3 = theme.surfaceElevated;
 HeaderRow.BackgroundTransparency = 0.4;
 HeaderRow.BorderSizePixel = 0;
 HeaderRow.Parent = PlayersPageRoot;
 applyCorner(HeaderRow, 6);
-applyStroke(HeaderRow, "strokeSoft", 1, 0.5);
+applyStroke(HeaderRow, theme.strokeSoft, 1, 0.5);
 local function makeColumnHeader(text, x, width, color, align)
 	local label = Instance.new("TextLabel");
 	label.Size = UDim2.new(0, width, 1, 0);
@@ -8269,7 +6831,7 @@ PlayerScroll.Size = UDim2.new(1, -24, 1, -144);
 PlayerScroll.Position = UDim2.new(0, 12, 0, 132);
 PlayerScroll.BackgroundTransparency = 1;
 PlayerScroll.ScrollBarThickness = 4;
-bindThemeColor(PlayerScroll, "ScrollBarImageColor3", "stroke");
+PlayerScroll.ScrollBarImageColor3 = theme.stroke;
 PlayerScroll.CanvasSize = UDim2.new(0, 0, 0, 0);
 PlayerScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y;
 PlayerScroll.Parent = PlayersPageRoot;
@@ -8323,7 +6885,7 @@ local function buildCrewListGUI()
 		bg.BorderSizePixel = 0;
 		bg.Parent = row;
 		applyCorner(bg, 6);
-		applyStroke(bg, "strokeSoft", 1, 0.5);
+		applyStroke(bg, theme.strokeSoft, 1, 0.5);
 		table.insert(fadeTargets, { inst = bg, prop = "BackgroundTransparency", to = 0 });
 		if (mode == MODE_TRIGGER) then
 			makeGradient(theme.accentSoft, theme.accentWarm, 90).Parent = bg;
@@ -8387,7 +6949,7 @@ local function buildCrewListGUI()
 		row.BorderSizePixel = 0;
 		row.Parent = PlayerScroll;
 		applyCorner(row, 6);
-		applyStroke(row, "strokeSoft", 1, 0.5);
+		applyStroke(row, theme.strokeSoft, 1, 0.5);
 		local rowStroke = row:FindFirstChildOfClass("UIStroke");
 		local rowEnterScale = Instance.new("UIScale");
 		rowEnterScale.Scale = 0.96;
@@ -8511,7 +7073,7 @@ rebuildPlayerListGUI = function()
 		row.BorderSizePixel = 0;
 		row.Parent = PlayerScroll;
 		applyCorner(row, 6);
-		applyStroke(row, "strokeSoft", 1, 0.5);
+		applyStroke(row, theme.strokeSoft, 1, 0.5);
 		local rowStroke = row:FindFirstChildOfClass("UIStroke");
 		local rowEnterScale = Instance.new("UIScale");
 		rowEnterScale.Scale = 0.96;
@@ -8576,7 +7138,7 @@ rebuildPlayerListGUI = function()
 			bg.BorderSizePixel = 0;
 			bg.Parent = row;
 			applyCorner(bg, 6);
-			applyStroke(bg, "strokeSoft", 1, 0.5);
+			applyStroke(bg, theme.strokeSoft, 1, 0.5);
 			table.insert(fadeTargets, { inst = bg, prop = "BackgroundTransparency", to = 0 });
 			if (mode == MODE_TRIGGER) then
 				makeGradient(theme.accentSoft, theme.accentWarm, 90).Parent = bg;
@@ -9185,14 +7747,14 @@ local SpecFrame = Instance.new("Frame");
 SpecFrame.Name = "SpecFrame";
 SpecFrame.Size = UDim2.new(0, 260, 0, 54);
 SpecFrame.Position = UDim2.new(0, 20, 0, 20);
-bindThemeColor(SpecFrame, "BackgroundColor3", "surface");
+SpecFrame.BackgroundColor3 = theme.surface;
 SpecFrame.BackgroundTransparency = 0.22;
 SpecFrame.BorderSizePixel = 0;
 SpecFrame.Parent = SpecGui;
 applyCorner(SpecFrame, 12);
 
 local SpecStroke = Instance.new("UIStroke");
-bindThemeColor(SpecStroke, "Color", "glassStroke");
+SpecStroke.Color = theme.glassStroke;
 SpecStroke.Thickness = 1;
 SpecStroke.Transparency = 0.88;
 SpecStroke.Parent = SpecFrame;
@@ -9203,7 +7765,7 @@ SpecTitle.Position = UDim2.new(0, 14, 0, 10);
 SpecTitle.BackgroundTransparency = 1;
 SpecTitle.Font = Enum.Font.GothamBold;
 SpecTitle.TextSize = 12;
-bindThemeColor(SpecTitle, "TextColor3", "textDim");
+SpecTitle.TextColor3 = theme.textDim;
 SpecTitle.TextXAlignment = Enum.TextXAlignment.Left;
 SpecTitle.Text = "SPECTATOR LIST";
 SpecTitle.Parent = SpecFrame;
@@ -9397,7 +7959,6 @@ local function refreshUi()
 		SpecStatus.TextColor3 = theme.textDim;
 	end
 end
-registerThemeRepaint(refreshUi);
 
 local function setActive(active, spectator, reason)
 	if active then
